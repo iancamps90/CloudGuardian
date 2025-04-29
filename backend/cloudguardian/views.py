@@ -1,4 +1,5 @@
 """ SISTEMA OPERATIVO """
+import datetime
 import os
 import json # para poder manejar archivos .json
 import requests
@@ -34,25 +35,36 @@ from .serializers import UserRegisterSerializer # importamos el serializador del
 
 """ 🔵🔵🔵 RUTAS NECESARIAS 🔵🔵🔵 """
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Ruta al caddy.json
-JSON_PATH = os.path.join(BASE_DIR, "..", "deploy", "caddy.json") # Eso construye la ruta relativa correcta al caddy.json aunque estés dentro del contenedor o en local
+
+# Ruta al NUEVO caddy.json GENERADO DINAMICAMENTE
+JSON_PATH = os.path.join(BASE_DIR, "deploy", "caddy.json") # Eso construye la ruta relativa correcta al caddy.json aunque estés dentro del contenedor o en local
 
 
-
-""" 🟡🟡🟡 Intentamos recargar Caddy automáticamente 🟡🟡🟡 """
-
-def reload_caddy(request, new_config):
+# Función mejorada para guardar y recargar Caddy automáticamente
+def guardar_y_recargar_config(data):
     try:
-        response = requests.post(os.environ.get("CADDY_ADMIN", "http://caddy:2019") + "/load", json = new_config)
-        if response.status_code != 200:
-            return Response({'warning': 'Configuración guardada, pero Caddy no se recargó automáticamente.'}, status=status.HTTP_202_ACCEPTED)
+        # Backup
+        backup_path = os.path.join(BASE_DIR, "deploy", "caddy_backup.json")
+        shutil.copy(JSON_PATH, backup_path)
 
-    except Exception as reload_error:
-        return Response({'warning': f'Guardado, pero error al recargar Caddy: {reload_error}'}, status=status.HTTP_202_ACCEPTED)
-    return Response({'message': 'Configuración actualizada y Caddy recargado'}, status=status.HTTP_200_OK) 
+        # Guardar nuevo JSON
+        with open(JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+
+        # Reload Caddy
+        response = requests.post(os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load", json=data)
+
+        if response.status_code != 200:
+            return False, "Configuración guardada, pero error al recargar Caddy."
+
+        return True, "Configuración guardada y Caddy recargado correctamente."
+
+    except Exception as e:
+        return False, f"Error al guardar o recargar Caddy: {e}"
 
 
 """ 🔵 VISTAS CLÁSICAS PARA TEMPLATES 🔵 """
+
 """  HOME (DASHBOARD)  """
 @login_required  # vista a proteger
 def home(request):
@@ -90,23 +102,17 @@ def register_view(request):
 
         user = User.objects.create_user(username=username, password=password1)
 
-        # Crea automáticamente su UserJSON
+        # Crear configuración inicial de usuario
         try:
-            BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            caddy_path = os.path.join(BASE_DIR, "..", "deploy", "caddy.json")
-
-            with open(caddy_path, "r", encoding="utf-8") as f:
+            with open(JSON_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-
-            from cloudguardian.models import UserJSON
             UserJSON.objects.create(user=user, json_data=data)
-
-            messages.success(request, f"Usuario '{username}' registrado exitosamente y configuración inicial creada! Bienvenido!")
+            messages.success(request, f"Usuario '{username}' registrado exitosamente y configuración creada!")
         except Exception as e:
-            messages.warning(request, f"Usuario '{username}' registrado, pero hubo un error creando su configuración: {e}")
+            messages.warning(request, f"Usuario registrado pero error creando su configuración: {e}")
 
         auth_login(request, user)
-        return redirect('home')
+        return redirect("home")
 
     return render(request, "register.html")
 
@@ -121,166 +127,111 @@ def logout_view(request):
 """  CONFIGURACIÓN GENERAL  """
 @login_required
 def configuracion(request):
-    if not request.user.is_authenticated:
-        return redirect('login')
-
     try:
         user_config = UserJSON.objects.get(user=request.user)
     except UserJSON.DoesNotExist:
         messages.error(request, "No se encontró configuración para este usuario.")
-        return redirect('home')
+        return redirect("home")
 
     if request.method == "POST":
         new_config = request.POST.get("config")
         try:
-            # Validar que el JSON sea correcto
             data = json.loads(new_config)
-
-            # 🔥 Backup automático antes de guardar
-            backup_path = os.path.join(BASE_DIR, "..", "deploy", f"caddy_backup_{request.user.username}.json")
-            shutil.copy(JSON_PATH, backup_path)
-
-            # Guardar el nuevo JSON
+            ok, msg = guardar_y_recargar_config(data)
+            messages.success(request, msg) if ok else messages.error(request, msg)
             user_config.json_data = data
             user_config.save()
-
-            messages.success(request, "Configuración actualizada correctamente.")
-            return redirect('configuracion')
-
+            return redirect("configuracion")
         except json.JSONDecodeError:
-            messages.error(request, "Formato JSON inválido. No se guardaron cambios.")
-            return render(request, "configuracion.html", {"config": new_config})
+            messages.error(request, "Formato JSON inválido.")
 
-        except Exception as e:
-            messages.error(request, "Ocurrió un error inesperado.")
-            return render(request, "configuracion.html", {"config": new_config})
-
-    # Mostrar configuración actual
     config_json = json.dumps(user_config.json_data, indent=4)
     return render(request, "configuracion.html", {"config": config_json})
+
 
 
 """  IPs BLOQUEADAS  """
 @login_required
 def ips_bloqueadas(request):
-    if not request.user.is_authenticated:
-        return redirect('login')
-
-    # Initialize allow and deny with default values
     allow = []
     deny = []
-    user_config = None # Initialize user_config outside the try block
-
     try:
         user_config = UserJSON.objects.get(user=request.user)
         data = user_config.json_data
-
-        # Check if the required keys exist before accessing them
         remote_ip_config = data.get("apps", {}).get("http", {}).get("security", {}).get("remote_ip", {})
-
         allow = remote_ip_config.get("allow", [])
         deny = remote_ip_config.get("deny", [])
 
-        if request.method == "POST" and user_config: # Only process POST if user_config was found
+        if request.method == "POST":
             action = request.POST.get("action")
             if action == "add":
                 ip_add = request.POST.get("ip_add")
-                if ip_add:
-                    if ip_add not in deny:
-                        deny.append(ip_add)
-                        user_config.json_data = data # Update the full data structure
-                        user_config.save()
-                        messages.success(request, f"IP {ip_add} bloqueada correctamente.")
-                    else:
-                        messages.warning(request, f"La IP {ip_add} ya estaba bloqueada.")
+                if ip_add and ip_add not in deny:
+                    deny.append(ip_add)
+                    user_config.json_data = data
+                    ok, msg = guardar_y_recargar_config(data)
+                    messages.success(request, msg) if ok else messages.error(request, msg)
+                    user_config.save()
             elif action == "delete":
                 ip_delete = request.POST.get("ip_delete")
-                if ip_delete:
-                    if ip_delete in deny:
-                        deny.remove(ip_delete)
-                        user_config.json_data = data # Update the full data structure
-                        user_config.save()
-                        messages.success(request, f"IP {ip_delete} desbloqueada correctamente.")
-                    else:
-                        messages.warning(request, f"La IP {ip_delete} no estaba bloqueada.")
-
-    except UserJSON.DoesNotExist:
-        messages.error(request, "No se encontró configuración para este usuario.")
-        # allow and deny remain [] as initialized
-
-    except KeyError as ke:
-        messages.error(request, f"Error: Configuración JSON incompleta o incorrecta. Falta la clave: {ke}")
-        # allow and deny remain [] as initialized
+                if ip_delete and ip_delete in deny:
+                    deny.remove(ip_delete)
+                    user_config.json_data = data
+                    ok, msg = guardar_y_recargar_config(data)
+                    messages.success(request, msg) if ok else messages.error(request, msg)
+                    user_config.save()
 
     except Exception as e:
-        messages.error(request, f"Error cargando o guardando configuración de IPs: {e}")
-        # allow and deny remain [] as initialized
+        messages.error(request, f"Error cargando configuración de IPs: {e}")
 
+    return render(request, "ips_bloqueadas.html", {"allow_ips": allow, "deny_ips": deny})
 
-    return render(request, "ips_bloqueadas.html", {
-        "allow_ips": allow,
-        "deny_ips": deny,
-    })
 
 
 """  RUTAS PROTEGIDAS  """
 @login_required
 def rutas_protegidas(request):
-    if not request.user.is_authenticated:
-        return redirect('login')
-
     rutas = []
     try:
         user_config = UserJSON.objects.get(user=request.user)
         data = user_config.json_data
-        rutas = []
 
-        routes = data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
+        routes = data.get("apps", {}).get("http", {}).get("servers", {}).get("Cloud_Guardian", {}).get("routes", [])
 
-        # Recorremos las rutas y extraemos solo los paths
         for route in routes:
-            match = route.get("match", [])
-            for m in match:
-                if "path" in m:
-                    rutas.extend(m["path"])
+            for match in route.get("match", []):
+                rutas.extend(match.get("path", []))
 
         if request.method == "POST":
             action = request.POST.get("action")
             if action == "add":
                 ruta_add = request.POST.get("ruta_add")
-                if ruta_add:
-                    # Comprobar que no exista
-                    if ruta_add not in rutas:
-                        new_route = {
-                            "match": [{"path": [ruta_add]}],
-                            "handle": [
-                                {"handler": "static_response", "body": f"Acceso permitido a {ruta_add}"}
-                            ]
-                        }
-                        routes.append(new_route)
-                        user_config.json_data = data
-                        user_config.save()
-                        messages.success(request, f"Ruta '{ruta_add}' añadida correctamente.")
-                        return redirect('rutas_protegidas')
-                    else:
-                        messages.warning(request, f"La ruta '{ruta_add}' ya existe.")
+                if ruta_add and ruta_add not in rutas:
+                    new_route = {
+                        "match": [{"path": [ruta_add]}],
+                        "handle": [{"handler": "static_response", "body": f"Acceso permitido a {ruta_add}"}]
+                    }
+                    routes.append(new_route)
+                    user_config.json_data = data
+                    ok, msg = guardar_y_recargar_config(data)
+                    messages.success(request, msg) if ok else messages.error(request, msg)
+                    user_config.save()
+                    return redirect("rutas_protegidas")
             elif action == "delete":
                 ruta_delete = request.POST.get("ruta_delete")
-                new_routes = [r for r in routes if all(ruta_delete not in match.get("path", []) for match in r.get("match", []))]
-                if len(new_routes) < len(routes):
+                new_routes = [r for r in routes if ruta_delete not in r.get("match", [{}])[0].get("path", [])]
+                if len(new_routes) != len(routes):
                     data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"] = new_routes
                     user_config.json_data = data
+                    ok, msg = guardar_y_recargar_config(data)
+                    messages.success(request, msg) if ok else messages.error(request, msg)
                     user_config.save()
-                    messages.success(request, f"Ruta '{ruta_delete}' eliminada correctamente.")
-                    return redirect('rutas_protegidas')
-                else:
-                    messages.warning(request, f"La ruta '{ruta_delete}' no se encontró.")
-    except Exception as e:
-        messages.error(request, "Error cargando configuración de rutas.")
+                    return redirect("rutas_protegidas")
 
-    return render(request, "rutas_protegidas.html", {
-        "rutas": rutas
-    })
+    except Exception as e:
+        messages.error(request, f"Error cargando configuración de rutas: {e}")
+
+    return render(request, "rutas_protegidas.html", {"rutas": rutas})
 
 
 
