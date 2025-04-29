@@ -1,0 +1,33 @@
+{
+    "admin": {
+        "listen": "0.0.0.0:2019"
+    },
+    "apps": {
+        "http": {
+            "servers": {
+                "Cloud_Guardian": {
+                    "listen": [
+                        ":80"
+                    ],
+                    "routes": [
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/ian90/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso permitido a ian90"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

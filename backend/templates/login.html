@@ -12,9 +12,15 @@
         <label class="block mb-2">Contraseña</label>
         <input type="password" name="password" class="w-full p-2 mb-6 rounded bg-gray-800 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400" required>
 
+
         <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 py-2 px-4 rounded shadow focus:ring-2 focus:ring-blue-400 transition">
             Entrar
         </button>
+
+        <a href="{% url 'register' %}" class="block mt-4 w-full text-center bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded shadow focus:ring-2 focus:ring-gray-500 transition">
+            Crear cuenta
+        </a>
+        
     </form>
 </div>
 {% endblock %}
