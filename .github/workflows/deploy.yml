@@ -1,0 +1,36 @@
+name:  Deploy CloudGuardian
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name:  Clonar repositorio
+        uses: actions/checkout@v3
+
+      - name:  Iniciar sesión SSH con clave secreta
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name:  Subir proyecto al servidor
+        run: |
+          rsync -avz --delete ./ ian@${{ secrets.SERVER_IP }}:~/apps/cloudguardian/
+
+      - name:  Levantar contenedores con Docker Compose
+        run: |
+          ssh ian@${{ secrets.SERVER_IP }} << 'EOF'
+            cd ~/apps/cloudguardian
+            docker-compose down
+            docker-compose up -d --build
+          EOF
+
+  
+
+
+

@@ -1,0 +1,10 @@
+# Dockerfile.caddy (dentro de ./deploy)
+FROM caddy:alpine
+
+COPY caddy.json /etc/caddy/caddy.json
+COPY www /srv
+
+CMD ["caddy", "run", "--config", "/etc/caddy/caddy.json"]
+
+
+
