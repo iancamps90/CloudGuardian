@@ -24,6 +24,21 @@
                                     "body": "Acceso permitido a ian90"
                                 }
                             ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/api/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso permitido a /api/*"
+                                }
+                            ]
                         }
                     ]
                 }

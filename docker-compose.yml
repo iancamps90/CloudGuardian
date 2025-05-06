@@ -9,10 +9,12 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./deploy/caddy.json:/etc/caddy/caddy.json:rw  # permite acceso desde Django
+      - ./backend/deploy/caddy.json:/etc/caddy/caddy.json:rw  # permite acceso desde Django
       
     environment:
       - CADDY_ADMIN=http://caddy:2019
+    depends_on:
+      - caddy
     
 
   caddy:
@@ -25,3 +27,6 @@ services:
       - "2019:2019"
     depends_on:
       - django
+    volumes:
+      - ./backend/deploy/caddy.json:/etc/caddy/caddy.json:rw  #  Se lo pasamos a Caddy también
+      - ./deploy/www:/srv  # opcional si tienes frontend

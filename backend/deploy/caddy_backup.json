@@ -5,7 +5,7 @@
     "apps": {
         "http": {
             "servers": {
-                "Cloud_Guardian   ": {
+                "Cloud_Guardian": {
                     "listen": [
                         ":80"
                     ],
@@ -14,29 +14,14 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/api/*"
+                                        "/ian90/*"
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
-                                    "handler": "reverse_proxy",
-                                    "upstreams": [
-                                        {
-                                            "dial": "django:8000"
-                                        }
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            "handle": [
-                                {
-                                    "handler": "file_server",
-                                    "root": "/srv",
-                                    "index_names": [
-                                        "index.html"
-                                    ]
+                                    "handler": "static_response",
+                                    "body": "Acceso permitido a ian90"
                                 }
                             ]
                         }
