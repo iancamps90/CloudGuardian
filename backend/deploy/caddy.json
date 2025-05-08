@@ -21,6 +21,36 @@
                                     ]
                                 }
                             ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "casa"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso permitido a casa"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "trabajo"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso permitido a trabajo"
+                                }
+                            ]
                         }
                     ]
                 }
@@ -28,3 +58,4 @@
         }
     }
 }
+
