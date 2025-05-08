@@ -13,8 +13,7 @@ services:
       
     environment:
       - CADDY_ADMIN=http://caddy:2019
-    depends_on:
-      - caddy
+    
     
 
   caddy:

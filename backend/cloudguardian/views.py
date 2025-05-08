@@ -149,8 +149,6 @@ def configuracion(request):
     return render(request, "configuracion.html", {"config": config_json})
 
 
-
-"""  IPs BLOQUEADAS  """
 @login_required
 def ips_bloqueadas(request):
     allow = []
@@ -158,34 +156,34 @@ def ips_bloqueadas(request):
     try:
         user_config = UserJSON.objects.get(user=request.user)
         data = user_config.json_data
-        remote_ip_config = data.get("apps", {}).get("http", {}).get("security", {}).get("remote_ip", {})
-        allow = remote_ip_config.get("allow", [])
-        deny = remote_ip_config.get("deny", [])
+
+        remote_ip_config = data.setdefault("apps", {}).setdefault("http", {}).setdefault("security", {}).setdefault("remote_ip", {})
+        allow = remote_ip_config.setdefault("allow", [])
+        deny = remote_ip_config.setdefault("deny", [])
 
         if request.method == "POST":
             action = request.POST.get("action")
-            if action == "add":
-                ip_add = request.POST.get("ip_add")
-                if ip_add and ip_add not in deny:
-                    deny.append(ip_add)
-                    user_config.json_data = data
-                    ok, msg = guardar_y_recargar_config(data)
-                    messages.success(request, msg) if ok else messages.error(request, msg)
-                    user_config.save()
-            elif action == "delete":
-                ip_delete = request.POST.get("ip_delete")
-                if ip_delete and ip_delete in deny:
-                    deny.remove(ip_delete)
-                    user_config.json_data = data
-                    ok, msg = guardar_y_recargar_config(data)
-                    messages.success(request, msg) if ok else messages.error(request, msg)
-                    user_config.save()
+            ip_add = request.POST.get("ip_add")
+            ip_delete = request.POST.get("ip_delete")
+
+            if action == "add" and ip_add and ip_add not in deny:
+                deny.append(ip_add)
+                user_config.json_data = data
+                ok, msg = guardar_y_recargar_config(data)
+                messages.success(request, msg) if ok else messages.error(request, msg)
+                user_config.save()
+
+            elif action == "delete" and ip_delete and ip_delete in deny:
+                deny.remove(ip_delete)
+                user_config.json_data = data
+                ok, msg = guardar_y_recargar_config(data)
+                messages.success(request, msg) if ok else messages.error(request, msg)
+                user_config.save()
 
     except Exception as e:
         messages.error(request, f"Error cargando configuración de IPs: {e}")
 
     return render(request, "ips_bloqueadas.html", {"allow_ips": allow, "deny_ips": deny})
-
 
 
 """  RUTAS PROTEGIDAS  """

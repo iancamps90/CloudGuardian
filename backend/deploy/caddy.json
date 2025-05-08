@@ -11,32 +11,14 @@
                     ],
                     "routes": [
                         {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian90/*"
-                                    ]
-                                }
-                            ],
                             "handle": [
                                 {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a ian90"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/api/*"
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [
+                                        {
+                                            "dial": "localhost:8000"
+                                        }
                                     ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /api/*"
                                 }
                             ]
                         }
