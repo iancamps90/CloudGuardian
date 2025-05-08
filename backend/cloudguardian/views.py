@@ -6,10 +6,11 @@ import requests
 import shutil  #  para copiar archivos fácilmente (hacer backup)
 
 """ DJANGO """
-from django.shortcuts import render, redirect  #  añadimos render para templates 
+from django.shortcuts import render, redirect, get_object_or_404  #  añadimos render para templates 
 from django.contrib.auth.models import User # importamos el modelo de usuario que ya trae django
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout # verifica si el username y password son correctos
 from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
 from django.contrib import messages
 from django.views.decorators.csrf import csrf_exempt
@@ -40,30 +41,69 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JSON_PATH = os.path.join(BASE_DIR, "deploy", "caddy.json") # Eso construye la ruta relativa correcta al caddy.json aunque estés dentro del contenedor o en local
 
 
-# Función mejorada para guardar y recargar Caddy automáticamente
-def guardar_y_recargar_config(data):
+# Función mejorada para construir el caddy global y recargar Caddy automáticamente
+def construir_configuracion_global():
+    base = {
+        "admin": {"listen": "0.0.0.0:2019"},
+        "apps": {
+            "http": {
+                "servers": {
+                    "Cloud_Guardian": {
+                        "listen": [":80"],
+                        "routes": []
+                    }
+                }
+            }
+        }
+    }
+
+    for ujson in UserJSON.objects.all():
+        rutas = ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
+        base["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"].extend(rutas)
+
+    # Sobrescribe el caddy.json global
+    with open(JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(base, f, indent=4)
+
+    # Recarga en Caddy
     try:
-        # Backup
-        backup_path = os.path.join(BASE_DIR, "deploy", "caddy_backup.json")
-        shutil.copy(JSON_PATH, backup_path)
-
-        # Guardar nuevo JSON
-        with open(JSON_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-
-        # Reload Caddy
-        response = requests.post(os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load", json=data)
-
+        response = requests.post(os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load", json=base)
         if response.status_code != 200:
-            return False, "Configuración guardada, pero error al recargar Caddy."
-
-        return True, "Configuración guardada y Caddy recargado correctamente."
-
+            return False, "Configuración fusionada, pero error al recargar Caddy."
+        return True, "Configuración global generada correctamente."
     except Exception as e:
-        return False, f"Error al guardar o recargar Caddy: {e}"
+        return False, f"Error recargando Caddy: {e}"
 
 
 """ 🔵 VISTAS CLÁSICAS PARA TEMPLATES 🔵 """
+
+""" FUNCIONES DE SUPERUSUARIO: PARA VER EL caddy.json GLOBAL Y PARA ELIMINAR USUARIOS """
+
+@staff_member_required
+def ver_caddy_json_global(request):
+    with open(JSON_PATH, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    return render(request, "config_global.html", {"config": json.dumps(config, indent=4)})
+
+@staff_member_required
+def eliminar_usuario(request):
+    if request.method == "POST":
+        username = request.POST.get("username")
+
+        try:
+            user = User.objects.get(username=username)
+            user.delete()  # Esto elimina también el UserJSON si tiene on_delete=CASCADE
+
+            ok, msg = construir_configuracion_global()
+
+            messages.success(request, f"Usuario '{username}' eliminado. {msg}" if ok else f"Usuario eliminado, pero {msg}")
+        except User.DoesNotExist:
+            messages.error(request, f"No existe el usuario '{username}'.")
+
+        return redirect("eliminar_usuario")
+
+    return render(request, "eliminar_usuario.html")
+
 
 """  HOME (DASHBOARD)  """
 @login_required  # vista a proteger
@@ -104,9 +144,21 @@ def register_view(request):
 
         # Crear configuración inicial de usuario
         try:
-            with open(JSON_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            UserJSON.objects.create(user=user, json_data=data)
+            # Crear configuración inicial por defecto
+            default_config = {
+                "apps": {
+                    "http": {
+                        "servers": {
+                            "Cloud_Guardian": {
+                                "listen": [":80"],
+                                "routes": []
+                            }
+                        }
+                    }
+                }
+            }
+            UserJSON.objects.create(user=user, json_data=default_config)
+
             messages.success(request, f"Usuario '{username}' registrado exitosamente y configuración creada!")
         except Exception as e:
             messages.warning(request, f"Usuario registrado pero error creando su configuración: {e}")
@@ -127,6 +179,43 @@ def logout_view(request):
 """  CONFIGURACIÓN GENERAL  """
 @login_required
 def configuracion(request):
+    
+    # SUPERUSUARIOS:
+    
+    if request.user.is_superuser:
+        try:
+            with open(JSON_PATH, "r", encoding="utf-8") as f:
+                global_config = json.load(f)
+
+            if request.method == "POST":
+                new_config = request.POST.get("config")
+                try:
+                    data = json.loads(new_config)
+                    with open(JSON_PATH, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=4)
+
+                    # Recargar Caddy
+                    response = requests.post(os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load", json=data)
+                    if response.status_code == 200:
+                        messages.success(request, "Configuración global actualizada y recargada correctamente.")
+                    else:
+                        messages.error(request, "Error al recargar Caddy con la nueva configuración.")
+                except json.JSONDecodeError:
+                    messages.error(request, "Formato JSON inválido.")
+                return redirect("configuracion")
+
+            config_json = json.dumps(global_config, indent=4)
+            return render(request, "configuracion.html", {
+                "config": config_json,
+                "es_superuser": True
+            })
+
+        except Exception as e:
+            messages.error(request, f"Error al leer el caddy.json global: {e}")
+            return redirect("home")
+        
+    # USUARIOS NORMALES:
+    
     try:
         user_config = UserJSON.objects.get(user=request.user)
     except UserJSON.DoesNotExist:
@@ -137,10 +226,11 @@ def configuracion(request):
         new_config = request.POST.get("config")
         try:
             data = json.loads(new_config)
-            ok, msg = guardar_y_recargar_config(data)
-            messages.success(request, msg) if ok else messages.error(request, msg)
             user_config.json_data = data
             user_config.save()
+            ok, msg = construir_configuracion_global()
+            messages.success(request, msg) if ok else messages.error(request, msg)
+
             return redirect("configuracion")
         except json.JSONDecodeError:
             messages.error(request, "Formato JSON inválido.")
@@ -148,44 +238,86 @@ def configuracion(request):
     config_json = json.dumps(user_config.json_data, indent=4)
     return render(request, "configuracion.html", {"config": config_json})
 
-
-
 """  IPs BLOQUEADAS  """
 @login_required
 def ips_bloqueadas(request):
-    allow = []
     deny = []
     try:
-        user_config = UserJSON.objects.get(user=request.user)
+        user_config = UserJSON.objects.get(user = request.user)
         data = user_config.json_data
-        remote_ip_config = data.get("apps", {}).get("http", {}).get("security", {}).get("remote_ip", {})
-        allow = remote_ip_config.get("allow", [])
-        deny = remote_ip_config.get("deny", [])
+
+        rutas = data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
+
+        # Vamos a buscar la ruta para IPs bloqueadas del usuario actual
+        ruta_bloqueadas = None  # Valor por defecto si no se encuentra ninguna
+
+        for ruta in rutas:
+            match = ruta.get('match', [{}])
+            if match and 'remote_ip' in match[0]:
+                path = match[0].get('path', [""])
+            if path and f"/{request.user.username}/" in path[0]:
+                ruta_bloqueadas = ruta
+                break  # Salimos porque ya encontramos la primera coincidencia
+
+
+        if ruta_bloqueadas:
+            deny = ruta_bloqueadas['match'][0]['remote_ip']['ranges']
+        else:
+            deny = []
 
         if request.method == "POST":
             action = request.POST.get("action")
+
             if action == "add":
                 ip_add = request.POST.get("ip_add")
                 if ip_add and ip_add not in deny:
                     deny.append(ip_add)
-                    user_config.json_data = data
-                    ok, msg = guardar_y_recargar_config(data)
-                    messages.success(request, msg) if ok else messages.error(request, msg)
-                    user_config.save()
+                    messages.success(request, f"IP {ip_add} bloqueada correctamente.")
+
             elif action == "delete":
                 ip_delete = request.POST.get("ip_delete")
                 if ip_delete and ip_delete in deny:
                     deny.remove(ip_delete)
-                    user_config.json_data = data
-                    ok, msg = guardar_y_recargar_config(data)
-                    messages.success(request, msg) if ok else messages.error(request, msg)
-                    user_config.save()
+                    messages.success(request, f"IP {ip_delete} eliminada correctamente.")
+
+            # Actualizar o eliminar ruta según si hay IPs bloqueadas
+            if deny:
+                nueva_ruta_bloqueadas = {
+                    "match": [
+                        {
+                            "path": [f"/{request.user.username}/*"],
+                            "remote_ip": {"ranges": deny}
+                        }
+                    ],
+                    "handle": [
+                        {
+                            "handler": "static_response",
+                            "status_code": 403,
+                            "body": "IP bloqueada"
+                        }
+                    ]
+                }
+
+                if ruta_bloqueadas:
+                    rutas[rutas.index(ruta_bloqueadas)] = nueva_ruta_bloqueadas
+                else:
+                    rutas.insert(0, nueva_ruta_bloqueadas)
+
+            else:
+                if ruta_bloqueadas:
+                    rutas.remove(ruta_bloqueadas)
+
+            # Guardar JSON y recargar config Caddy
+            user_config.json_data = data
+            user_config.save()
+
+            ok, msg = construir_configuracion_global()
+            messages.success(request, msg) if ok else messages.error(request, msg)
 
     except Exception as e:
         messages.error(request, f"Error cargando configuración de IPs: {e}")
 
-    return render(request, "ips_bloqueadas.html", {"allow_ips": allow, "deny_ips": deny})
-
+    return render(request, "ips_bloqueadas.html", {"deny_ips": deny})
 
 
 """  RUTAS PROTEGIDAS  """
@@ -212,8 +344,13 @@ def rutas_protegidas(request):
                         "handle": [{"handler": "static_response", "body": f"Acceso permitido a {ruta_add}"}]
                     }
                     routes.append(new_route)
+                    
+                    if not ruta_add.startswith(f"/{request.user.username}/"):
+                        messages.error(request, "Solo puedes crear rutas bajo tu nombre de usuario.")
+                        return redirect("rutas_protegidas")
+
                     user_config.json_data = data
-                    ok, msg = guardar_y_recargar_config(data)
+                    ok, msg = construir_configuracion_global()
                     messages.success(request, msg) if ok else messages.error(request, msg)
                     user_config.save()
                     return redirect("rutas_protegidas")
@@ -223,7 +360,7 @@ def rutas_protegidas(request):
                 if len(new_routes) != len(routes):
                     data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"] = new_routes
                     user_config.json_data = data
-                    ok, msg = guardar_y_recargar_config(data)
+                    ok, msg = construir_configuracion_global()
                     messages.success(request, msg) if ok else messages.error(request, msg)
                     user_config.save()
                     return redirect("rutas_protegidas")
@@ -232,6 +369,8 @@ def rutas_protegidas(request):
         messages.error(request, f"Error cargando configuración de rutas: {e}")
 
     return render(request, "rutas_protegidas.html", {"rutas": rutas})
+
+
 
 
 
