@@ -78,8 +78,12 @@
                             ],
                             "handle": [
                                 {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a ian90"
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [
+                                        {
+                                            "dial": "localhost:8000"
+                                        }
+                                    ]
                                 }
                             ]
                         },

@@ -362,7 +362,6 @@ def ips_bloqueadas(request):
 
     return render(request, "ips_bloqueadas.html", {"deny_ips": deny})
 
-
 """  RUTAS PROTEGIDAS  """
 @login_required
 def rutas_protegidas(request):
