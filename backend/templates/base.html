@@ -59,6 +59,9 @@
                 <a href="{% url 'configuracion' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/configuracion/' %}bg-gray-800 font-bold{% endif %}">Configuración</a>
                 <a href="{% url 'ips_bloqueadas' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/ips-bloqueadas/' %}bg-gray-800 font-bold{% endif %}">IPs Bloqueadas</a>
                 <a href="{% url 'rutas_protegidas' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/rutas-protegidas/' %}bg-gray-800 font-bold{% endif %}">Rutas Protegidas</a>
+                {% if es_superuser %}
+                <a href="{% url 'eliminar_usuario' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/usuarios/eliminar/' %}bg-gray-800 font-bold{% endif %}">Gestionar usuarios</a>
+                {% endif %}
             </nav>
         </aside>
 

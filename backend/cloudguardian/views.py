@@ -6,10 +6,11 @@ import requests
 import shutil  #  para copiar archivos fácilmente (hacer backup)
 
 """ DJANGO """
-from django.shortcuts import render, redirect  #  añadimos render para templates 
+from django.shortcuts import render, redirect, get_object_or_404  #  añadimos render para templates 
 from django.contrib.auth.models import User # importamos el modelo de usuario que ya trae django
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout # verifica si el username y password son correctos
 from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
 from django.contrib import messages
 from django.views.decorators.csrf import csrf_exempt
@@ -39,43 +40,84 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Ruta al NUEVO caddy.json GENERADO DINAMICAMENTE
 JSON_PATH = os.path.join(BASE_DIR, "deploy", "caddy.json") # Eso construye la ruta relativa correcta al caddy.json aunque estés dentro del contenedor o en local
 
+# Función mejorada para construir el caddy global y recargar Caddy automáticamente
+def construir_configuracion_global():
+    
+    # Primero creamos el json de base
+    base = {
+        "admin": {"listen": "0.0.0.0:2019"},
+        "apps": {
+            "http": {
+                "servers": {
+                    "Cloud_Guardian": {
+                        "listen": [":80"],
+                        "routes": []
+                    }
+                }
+            }
+        }
+    }
 
-# Función mejorada para guardar y recargar Caddy automáticamente
-def guardar_y_recargar_config(data):
+    # Aqui vamos a recorrer todos los .json de los usuario uniendolos al base para tener un .json con todas las configuraciones
+    for ujson in UserJSON.objects.all():
+        rutas = ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
+        base["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"].extend(rutas)
+
+    # Ahora guardamos el .json base que hemos creado en caddy.json
+    with open(JSON_PATH, "w", encoding = "utf-8") as f:
+        json.dump(base, f, indent = 4)
+
+    # Por ultimo recargamos caddy
     try:
-        # Backup
-        backup_path = os.path.join(BASE_DIR, "deploy", "caddy_backup.json")
-        shutil.copy(JSON_PATH, backup_path)
-
-        # Guardar nuevo JSON
-        with open(JSON_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-
-        # Reload Caddy
-        response = requests.post(os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load", json=data)
-
+        response = requests.post(os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load", json = base)
         if response.status_code != 200:
-            return False, "Configuración guardada, pero error al recargar Caddy."
-
-        return True, "Configuración guardada y Caddy recargado correctamente."
-
+            return False, "Configuración fusionada, pero error al recargar Caddy."
+        return True, "Configuración global generada correctamente."
     except Exception as e:
-        return False, f"Error al guardar o recargar Caddy: {e}"
-
+        return False, f"Error recargando Caddy: {e}"
 
 """ 🔵 VISTAS CLÁSICAS PARA TEMPLATES 🔵 """
 
+""" FUNCIONES DE SUPERUSUARIO: PARA ELIMINAR USUARIOS """
+@staff_member_required
+def eliminar_usuario(request):
+    
+    # Obtenemos el usuario a eliminar
+    if request.method == "POST":
+        username = request.POST.get("username")
+
+        # Comprobamos que usuario existe en la base de datos y lo eliminamos
+        try:
+            user = User.objects.get(username = username)
+            user.delete()  # tambien se elimina su UserJson gracias a on_delete=CASCADE(models.py)
+
+            # Ahora recargamos la configuración global con los cambios(quitando las rutas del usuario eliminado)
+            ok, msg = construir_configuracion_global()
+            messages.success(request, f"Usuario '{username}' eliminado. {msg}" if ok else f"Usuario eliminado, pero {msg}")
+            
+        except User.DoesNotExist:
+            messages.error(request, f"No existe el usuario '{username}'.")
+
+        return redirect("eliminar_usuario")
+
+    return render(request, "eliminar_usuario.html")
+
 """  HOME (DASHBOARD)  """
-@login_required  # vista a proteger
+@login_required
 def home(request):
     return render(request, "home.html")
 
+# Login y Register no llevan protección
 """  LOGIN  """
-def login_view(request): # Login y Register no llevan protección 
+def login_view(request):
+    
     if request.method == "POST":
+        # Primero obtenemos el usuario y contraseña y lo autenticamos
         username = request.POST.get('username')
         password = request.POST.get('password')
-        user = authenticate(request, username=username, password=password)
+        user = authenticate(request, username = username, password = password)
+        
+        # Luego comprobamos si existe, y si existe entra en su configuracion y ya va a inicio, si no recarga el login
         if user:
             auth_login(request, user)
             messages.success(request, f"Bienvenido {username}!")
@@ -83,153 +125,313 @@ def login_view(request): # Login y Register no llevan protección
         else:
             messages.error(request, "Usuario o contraseña incorrectos.")
             return redirect('login')
+
     return render(request, "login.html")
 
 
 """  REGISTER  """
 def register_view(request):
+    
     if request.method == "POST":
+        # Obtenemos los datos del formulario de registro
         username = request.POST.get('username')
         password1 = request.POST.get('password1')
         password2 = request.POST.get('password2')
 
+        # Comprobamos que las contraseñas son iguales y que no existe un usuario con ese nombre
         if password1 != password2:
             messages.error(request, "Las contraseñas no coinciden.")
             return redirect('register')
-        if User.objects.filter(username=username).exists():
+        
+        if User.objects.filter(username = username).exists():
             messages.error(request, "El nombre de usuario ya existe.")
             return redirect('register')
 
-        user = User.objects.create_user(username=username, password=password1)
+        # Si todo va bien creamos el usuario nuevo con los datos pasados
+        user = User.objects.create_user(username = username, password = password1)
 
-        # Crear configuración inicial de usuario
+        # Creamos la configuración inicial de usuario por defecto
         try:
-            with open(JSON_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            UserJSON.objects.create(user=user, json_data=data)
+            default_config = {
+                "apps": {
+                    "http": {
+                        "servers": {
+                            "Cloud_Guardian": {
+                                "listen": [":80"],
+                                "routes": []
+                            }
+                        }
+                    }
+                }
+            }
+            # La guardamos en la base de datos
+            UserJSON.objects.create(user = user, json_data = default_config)
+
             messages.success(request, f"Usuario '{username}' registrado exitosamente y configuración creada!")
+            
         except Exception as e:
             messages.warning(request, f"Usuario registrado pero error creando su configuración: {e}")
 
+        # Iniciamos sesion automaticamente y redirigimos al inicio
         auth_login(request, user)
         return redirect("home")
 
     return render(request, "register.html")
 
-"""  LOGOUT  """
+"""  LOGOUT(cerrar sesión) """
 @login_required
 def logout_view(request):
     auth_logout(request)
     messages.success(request, "Sesión cerrada correctamente.")
     return redirect('login')
 
-
 """  CONFIGURACIÓN GENERAL  """
 @login_required
 def configuracion(request):
+    
+    # SUPERUSUARIOS:
+    
+    # Comprobamos que sea un superusuario
+    if request.user.is_superuser:
+        
+        try:
+            # Abrimos y cargamos el caddy.json global
+            with open(JSON_PATH, "r", encoding="utf-8") as f:
+                global_config = json.load(f)
+
+            # Si el metodo es POST significa que queremos modificar la configuración
+            if request.method == "POST":
+                # Guardamos la nueva configuración
+                new_config = request.POST.get("config")
+                
+                try:
+                    # Cargamos la nueva configuración
+                    data = json.loads(new_config)
+                    
+                    # Guardamos la nueva configuración sobreescribiendo el caddy.json global si la configuración es válida
+                    with open(JSON_PATH, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=4)
+
+                    # Recargamos Caddy
+                    response = requests.post(os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load", json=data)
+                    if response.status_code == 200:
+                        messages.success(request, "Configuración global actualizada y recargada correctamente.")
+                    else:
+                        messages.error(request, "Error al recargar Caddy con la nueva configuración.")
+                        
+                except json.JSONDecodeError:
+                    messages.error(request, "Formato JSON inválido.")
+                    
+                return redirect("configuracion")
+
+            # Si el metodo usado es GET mostramos el json
+            config_json = json.dumps(global_config, indent=4)
+            return render(request, "configuracion.html", {
+                "config": config_json,
+                "es_superuser": True
+            })
+
+        # Si hay algún error redirigimos a inicio
+        except Exception as e:
+            messages.error(request, f"Error al leer el caddy.json global: {e}")
+            return redirect("home")
+        
+    # USUARIOS NORMALES:
+    
     try:
+        # Obtenemos la configuración del usuario
         user_config = UserJSON.objects.get(user=request.user)
+        
+        # Si el usuario no tiene configuración redirigimos a home
     except UserJSON.DoesNotExist:
         messages.error(request, "No se encontró configuración para este usuario.")
         return redirect("home")
 
+    # Si el metodo es POST significa que queremos modificar la configuración
     if request.method == "POST":
+        # Guardamos la nueva configuración
         new_config = request.POST.get("config")
+        
         try:
+            # Cargamos los datos de la nueva configuración
             data = json.loads(new_config)
-            ok, msg = guardar_y_recargar_config(data)
-            messages.success(request, msg) if ok else messages.error(request, msg)
+            
+            # Los validamos
             user_config.json_data = data
+            
+            # Los guardamos en la base de datos
             user_config.save()
+            
+            # Recargamos la configuración global con los cambios del usuario
+            ok, msg = construir_configuracion_global()
+            messages.success(request, msg) if ok else messages.error(request, msg)
+
+            # Redirigimos a configuración 
             return redirect("configuracion")
+        
         except json.JSONDecodeError:
             messages.error(request, "Formato JSON inválido.")
 
-    config_json = json.dumps(user_config.json_data, indent=4)
+    # Si el método es GET mostramos los datos del json del usuario
+    config_json = json.dumps(user_config.json_data, indent = 4)
     return render(request, "configuracion.html", {"config": config_json})
 
-
+"""  IPs BLOQUEADAS  """
 @login_required
 def ips_bloqueadas(request):
-    allow = []
+    # Creamos un diccionario vacío donde vamos a meter las ips
     deny = []
+    
     try:
-        user_config = UserJSON.objects.get(user=request.user)
+        # Obtenemos la configuración del usuario y sus rutas
+        user_config = UserJSON.objects.get(user = request.user)
         data = user_config.json_data
+        rutas = data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
 
-        remote_ip_config = data.setdefault("apps", {}).setdefault("http", {}).setdefault("security", {}).setdefault("remote_ip", {})
-        allow = remote_ip_config.setdefault("allow", [])
-        deny = remote_ip_config.setdefault("deny", [])
+        # Buscamos la ruta para IPs bloqueadas del usuario actual
+        ruta_bloqueadas = None  # Valor por defecto si no se encuentra ninguna
+        for ruta in rutas:
+            match = ruta.get('match', [{}])
+            if match and 'remote_ip' in match[0]:
+                path = match[0].get('path', [""])
+            if path and f"/{request.user.username}/" in path[0]:
+                ruta_bloqueadas = ruta
+                break
 
+        # Si no existe ruta para IPs bloqueadas la creamos
+        if ruta_bloqueadas:
+            deny = ruta_bloqueadas['match'][0]['remote_ip']['ranges']
+        else:
+            deny = []
+
+        # Si el metodo es POST obtenemos los datos de la accion
         if request.method == "POST":
             action = request.POST.get("action")
-            ip_add = request.POST.get("ip_add")
-            ip_delete = request.POST.get("ip_delete")
+            
+            # Si la acción es añadir añadimos la ip
+            if action == "add":
+                ip_add = request.POST.get("ip_add")
+                if ip_add and ip_add not in deny:
+                    deny.append(ip_add)
+                    messages.success(request, f"IP {ip_add} bloqueada correctamente.")
 
-            if action == "add" and ip_add and ip_add not in deny:
-                deny.append(ip_add)
-                user_config.json_data = data
-                ok, msg = guardar_y_recargar_config(data)
-                messages.success(request, msg) if ok else messages.error(request, msg)
-                user_config.save()
+            # Si la acción es delete eliminamos la ip
+            elif action == "delete":
+                ip_delete = request.POST.get("ip_delete")
+                if ip_delete and ip_delete in deny:
+                    deny.remove(ip_delete)
+                    messages.success(request, f"IP {ip_delete} eliminada correctamente.")
 
-            elif action == "delete" and ip_delete and ip_delete in deny:
-                deny.remove(ip_delete)
-                user_config.json_data = data
-                ok, msg = guardar_y_recargar_config(data)
-                messages.success(request, msg) if ok else messages.error(request, msg)
-                user_config.save()
+            # Actualizamos o eliminamos ruta según si hay IPs bloqueadas
+            if deny:
+                nueva_ruta_bloqueadas = {
+                    "match": [
+                        {
+                            "path": [f"/{request.user.username}/*"],
+                            "remote_ip": {"ranges": deny}
+                        }
+                    ],
+                    "handle": [
+                        {
+                            "handler": "static_response",
+                            "status_code": 403,
+                            "body": "IP bloqueada"
+                        }
+                    ]
+                }
+                if ruta_bloqueadas:
+                    rutas[rutas.index(ruta_bloqueadas)] = nueva_ruta_bloqueadas
+                else:
+                    rutas.insert(0, nueva_ruta_bloqueadas)
+                    
+            # Si no hay ips bloqueadas eliminamos la ruta correspondiente
+            else:
+                if ruta_bloqueadas:
+                    rutas.remove(ruta_bloqueadas)
+
+            # Guardamos los datos en el UserJson en la base de datos
+            user_config.json_data = data
+            user_config.save()
+
+            # Recargamos la configuración global con los cambios del usuario
+            ok, msg = construir_configuracion_global()
+            messages.success(request, msg) if ok else messages.error(request, msg)
 
     except Exception as e:
         messages.error(request, f"Error cargando configuración de IPs: {e}")
 
-    return render(request, "ips_bloqueadas.html", {"allow_ips": allow, "deny_ips": deny})
-
+    return render(request, "ips_bloqueadas.html", {"deny_ips": deny})
 
 """  RUTAS PROTEGIDAS  """
 @login_required
 def rutas_protegidas(request):
+    # Creamos un diccionario vacío donde vamos a meter las rutas
     rutas = []
+    
     try:
+        
+        # Obtenemos la configuración del usuario y sus rutas
         user_config = UserJSON.objects.get(user=request.user)
         data = user_config.json_data
-
-        routes = data.get("apps", {}).get("http", {}).get("servers", {}).get("Cloud_Guardian", {}).get("routes", [])
-
-        for route in routes:
-            for match in route.get("match", []):
+        rutas = data.get("apps", {}).get("http", {}).get("servers", {}).get("Cloud_Guardian", {}).get("routes", [])
+        for ruta in rutas:
+            for match in ruta.get("match", []):
                 rutas.extend(match.get("path", []))
-
+                
+        # Si el metodo utilizado es POST obtenemos los datos de la acción
         if request.method == "POST":
             action = request.POST.get("action")
+            
+            # Si la acción es añadir añadimos la ruta a las rutas protegidas del usuario
             if action == "add":
                 ruta_add = request.POST.get("ruta_add")
                 if ruta_add and ruta_add not in rutas:
-                    new_route = {
+                    nueva_ruta = {
                         "match": [{"path": [ruta_add]}],
                         "handle": [{"handler": "static_response", "body": f"Acceso permitido a {ruta_add}"}]
                     }
-                    routes.append(new_route)
+                    rutas.append(nueva_ruta)
+                    
+                    # Por seguridad nos aseguramos de que los usuarios solo pueden crear rutas que empiecen por su nombre
+                    if not ruta_add.startswith(f"/{request.user.username}/"):
+                        messages.error(request, "Solo puedes crear rutas bajo tu nombre de usuario.")
+                        return redirect("rutas_protegidas")
+
+                    # Guardamos la configuración en la base de datos
                     user_config.json_data = data
-                    ok, msg = guardar_y_recargar_config(data)
-                    messages.success(request, msg) if ok else messages.error(request, msg)
                     user_config.save()
+                    
+                    # Recargamos la configuración global con los cambios del usuario
+                    ok, msg = construir_configuracion_global()
+                    messages.success(request, msg) if ok else messages.error(request, msg)
+                    
                     return redirect("rutas_protegidas")
+                
+            # Si la acción es eliminar eliminamos la ruta de las rutas protegidas del usuario
             elif action == "delete":
                 ruta_delete = request.POST.get("ruta_delete")
-                new_routes = [r for r in routes if ruta_delete not in r.get("match", [{}])[0].get("path", [])]
-                if len(new_routes) != len(routes):
-                    data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"] = new_routes
+                nuevas_rutas = [r for r in rutas if ruta_delete not in r.get("match", [{}])[0].get("path", [])]
+                
+                # Si se ha eliminado una ruta actualizamos el JSON
+                if len(nuevas_rutas) != len(rutas):
+                    data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"] = nuevas_rutas
+                    
+                    # Guarmos la nueva configuración en la base de datos
                     user_config.json_data = data
-                    ok, msg = guardar_y_recargar_config(data)
-                    messages.success(request, msg) if ok else messages.error(request, msg)
                     user_config.save()
+                    
+                    # Recargamos la configuración global con los cambios del usuario
+                    ok, msg = construir_configuracion_global()
+                    messages.success(request, msg) if ok else messages.error(request, msg)
+                    
                     return redirect("rutas_protegidas")
 
     except Exception as e:
         messages.error(request, f"Error cargando configuración de rutas: {e}")
 
     return render(request, "rutas_protegidas.html", {"rutas": rutas})
+
+
 
 
 

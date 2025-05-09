@@ -11,6 +11,71 @@
                     ],
                     "routes": [
                         {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/cano27/*"
+                                    ],
+                                    "remote_ip": {
+                                        "ranges": [
+                                            "100.10.10.2"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/ian90/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso peermitiddfasdo a ian90"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/cano19/*"
+                                    ],
+                                    "remote_ip": {
+                                        "ranges": [
+                                            "100.10.10.1",
+                                            "100.10.10.2"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/ian90/*"
+                                    ]
+                                }
+                            ],
                             "handle": [
                                 {
                                     "handler": "reverse_proxy",
@@ -26,14 +91,21 @@
                             "match": [
                                 {
                                     "path": [
-                                        "casa"
-                                    ]
+                                        "/cano19/*"
+                                    ],
+                                    "remote_ip": {
+                                        "ranges": [
+                                            "100.10.10.1",
+                                            "100.10.10.2"
+                                        ]
+                                    }
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-                                    "body": "Acceso permitido a casa"
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
                                 }
                             ]
                         },
@@ -41,14 +113,198 @@
                             "match": [
                                 {
                                     "path": [
-                                        "trabajo"
+                                        "/ian90/*"
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-                                    "body": "Acceso permitido a trabajo"
+                                    "body": "Acceso peermitido a ian90"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/cano19/*"
+                                    ],
+                                    "remote_ip": {
+                                        "ranges": [
+                                            "100.10.10.1",
+                                            "100.10.10.2"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/ian90/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso peermitido a ian90"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/cano19/*"
+                                    ],
+                                    "remote_ip": {
+                                        "ranges": [
+                                            "100.10.10.1",
+                                            "100.10.10.2"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/ian90/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso peermitiddfasdo a ian90"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/cano19/*"
+                                    ],
+                                    "remote_ip": {
+                                        "ranges": [
+                                            "100.10.10.1",
+                                            "100.10.10.2"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/ian90/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso peermitido a ian90"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/cano19/*"
+                                    ],
+                                    "remote_ip": {
+                                        "ranges": [
+                                            "100.10.10.1",
+                                            "100.10.10.2"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/ian90/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso peermitido a ian90"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/cano2/*"
+                                    ],
+                                    "remote_ip": {
+                                        "ranges": [
+                                            "100.10.10.2"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
+                                        "/cano/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso permitido a /cano/*"
                                 }
                             ]
                         }

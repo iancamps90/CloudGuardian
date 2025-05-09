@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     home, login_view, register_view, logout_view, configuracion, ips_bloqueadas, rutas_protegidas,
-    register, login, logout, UserDelete, listarUsers, caddy_config_view, AddIPs, DeleteIPs, AddRoutes, DeleteRoutes
+    register, login, logout, UserDelete, listarUsers, caddy_config_view, AddIPs, DeleteIPs, AddRoutes, DeleteRoutes, eliminar_usuario
 )
 # importamos las funciones y clases creadas en views
 
@@ -28,4 +28,5 @@ urlpatterns = [
     path('api/ips-bloqueadas/delete/', DeleteIPs.as_view(), name='ips-deleted'),
     path('api/rutas-protegidas/add/', AddRoutes.as_view(), name='routes-added'),
     path('api/rutas-protegidas/delete/', DeleteRoutes.as_view(), name='routes-deleted'),
+    path("usuarios/eliminar/", eliminar_usuario, name="eliminar_usuario"),
 ]

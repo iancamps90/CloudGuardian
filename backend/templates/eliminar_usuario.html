@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="text-xl font-bold mb-4">Eliminar usuario</h2>
+
+<p class="mb-2 text-gray-300">Introduce el nombre del usuario que deseas eliminar. Esta acción es irreversible.</p>
+
+<form method="post" class="space-y-4">
+    {% csrf_token %}
+    <input type="text" name="username" placeholder="Nombre de usuario" class="w-full p-2 rounded bg-gray-800 text-white border border-gray-600" required>
+    <br>
+    <button type="submit" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-white">Eliminar usuario</button>
+    <a href="{% url 'home' %}" class="ml-4 text-blue-400 hover:underline">Cancelar</a>
+</form>
+
+{% for message in messages %}
+    <p class="mt-2 text-yellow-300">{{ message }}</p>
+{% endfor %}
+
+{% endblock %}
