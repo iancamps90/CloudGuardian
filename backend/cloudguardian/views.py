@@ -371,12 +371,16 @@ def rutas_protegidas(request):
     try:
         
         # Obtenemos la configuración del usuario y sus rutas
-        user_config = UserJSON.objects.get(user=request.user)
+        user_config = UserJSON.objects.get(user = request.user)
         data = user_config.json_data
-        rutas = data.get("apps", {}).get("http", {}).get("servers", {}).get("Cloud_Guardian", {}).get("routes", [])
-        for ruta in rutas:
-            for match in ruta.get("match", []):
-                rutas.extend(match.get("path", []))
+        
+        # Accedemos a la lista de rutas completas
+        rutas_json = data.get("apps", {}).get("http", {}).get("servers", {}).get("Cloud_Guardian", {}).get("routes", [])
+        for ruta in rutas_json:
+            if isinstance(ruta, dict):
+                for match in ruta.get("match", []):
+                    if isinstance(match, dict):
+                        rutas.extend(match.get("path", []))
                 
         # Si el metodo utilizado es POST obtenemos los datos de la acción
         if request.method == "POST":
@@ -390,7 +394,7 @@ def rutas_protegidas(request):
                         "match": [{"path": [ruta_add]}],
                         "handle": [{"handler": "static_response", "body": f"Acceso permitido a {ruta_add}"}]
                     }
-                    rutas.append(nueva_ruta)
+                    rutas_json.append(nueva_ruta)
                     
                     # Por seguridad nos aseguramos de que los usuarios solo pueden crear rutas que empiecen por su nombre
                     if not ruta_add.startswith(f"/{request.user.username}/"):
@@ -398,6 +402,7 @@ def rutas_protegidas(request):
                         return redirect("rutas_protegidas")
 
                     # Guardamos la configuración en la base de datos
+                    data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"] = rutas_json
                     user_config.json_data = data
                     user_config.save()
                     
@@ -413,7 +418,7 @@ def rutas_protegidas(request):
                 nuevas_rutas = [r for r in rutas if ruta_delete not in r.get("match", [{}])[0].get("path", [])]
                 
                 # Si se ha eliminado una ruta actualizamos el JSON
-                if len(nuevas_rutas) != len(rutas):
+                if len(nuevas_rutas) != len(rutas_json):
                     data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"] = nuevas_rutas
                     
                     # Guarmos la nueva configuración en la base de datos
