@@ -1,6 +1,7 @@
 {
     "admin": {
-        "listen": "0.0.0.0:2019"
+        "listen": "0.0.0.0:2019",
+        "origins": ["167.235.155.72:2019"]
     },
     "apps": {
         "http": {
@@ -21,7 +22,7 @@
                             "handle": [
                                 {
                                     "handler": "file_server",
-                                    "root": "/home/despliegue-nube/cloudguardian/backend/static"
+                                    "root": "/home/despliegue-nube/cloudguardian/backend/staticfiles"
                                 }
                             ]
                         },
@@ -63,8 +64,6 @@
                                     ],
                                     "remote_ip": {
                                         "ranges": [
-                                            "123.333.222.11",
-                                            "111.222.333.33",
                                             "222.222.222.22"
                                         ]
                                     }
@@ -112,14 +111,19 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/ian1990/ddd"
+                                        "/ian1990/ddd",
+                                        "/ian1990/PIZZA"
+
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/ddd"
+
+                                    "body": "Acceso permitido a /ian1990/ddd",
+
+                                    "body": "Acceso permitido a /ian1990/PIZZA"
                                 }
                             ]
                         },
@@ -142,11 +146,11 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/nube/*"
+                                        "/nube/*",
+                                        "/ian19902/*"
                                     ],
                                     "remote_ip": {
                                         "ranges": [
-                                            "111.222.333.44"
                                         ]
                                     }
                                 }
@@ -180,7 +184,7 @@
                                     "handler": "reverse_proxy",
                                     "upstreams": [
                                         {
-                                            "dial": "127.0.0.1:8000"
+                                            "dial": ":8000"
                                         }
                                     ]
                                 }
