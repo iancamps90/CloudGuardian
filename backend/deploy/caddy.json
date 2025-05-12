@@ -96,22 +96,7 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/ian1990/estudio"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/estudio"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/ddd",
+
                                         "/ian1990/PIZZA"
 
                                     ]
