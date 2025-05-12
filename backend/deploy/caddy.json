@@ -37,14 +37,6 @@
                                 {
                                     "handler": "static_response",
                                     "body": "Acceso permitido a ian90"
-                            "handle": [
-                                {
-                                    "handler": "reverse_proxy",
-                                    "upstreams": [
-                                        {
-                                            "dial": "localhost:8000"
-                                        }
-                                    ]
                                 }
                             ]
                         },
@@ -52,66 +44,14 @@
                             "match": [
                                 {
                                     "path": [
-                                        "casa"
+                                        "/api/*"
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-                                    "body": "Acceso permitido a casa"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "trabajo"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a trabajo"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/cano27/*"
-                                    ],
-                                    "remote_ip": {
-                                        "ranges": [
-                                            "100.10.10.2",
-                                            "100.10.10.1"
-                                        ]
-                                    }
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "status_code": 403,
-                                    "body": "IP bloqueada"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/cano27/github/"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /cano27/github/"
+                                    "body": "Acceso permitido a /api/*"
                                 }
                             ]
                         },
@@ -123,13 +63,9 @@
                                     ],
                                     "remote_ip": {
                                         "ranges": [
-<<<<<<< HEAD
                                             "123.333.222.11",
                                             "111.222.333.33",
-                                            "222.222.222.22",
-                                            "123.234.345.12",
-                                            "999.999.999.99",
-                                            "222.222.333.22"
+                                            "222.222.222.22"
                                         ]
                                     }
                                 }
@@ -146,30 +82,14 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/ian1990/practicas",
-                                        "/ian1990/gym"
+                                        "/ian1990/practicas"
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/gym"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/estudiar"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/estudiar"
+                                    "body": "Acceso permitido a /ian1990/practicas"
                                 }
                             ]
                         },
@@ -222,13 +142,11 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/nube/*",
-                                        "/ian19902/*"
+                                        "/nube/*"
                                     ],
                                     "remote_ip": {
                                         "ranges": [
-                                            "123.555.555.21",
-                                            "222.111.333.12"
+                                            "111.222.333.44"
                                         ]
                                     }
                                 }
@@ -245,14 +163,14 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/ian19902/trabajo"
+                                        "/nube/trabajo"
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-                                    "body": "Acceso permitido a /ian19902/trabajo"
+                                    "body": "Acceso permitido a /nube/trabajo"
                                 }
                             ]
                         },
