@@ -451,7 +451,7 @@ def rutas_protegidas(request):
                 .setdefault("http", {}) \
                 .setdefault("servers", {}) \
                 .setdefault("Cloud_Guardian", {}) \
-                    setdefault("routes", [])
+                .setdefault("routes", [])
 
     # Extrae sólo los paths (strings) para renderizar en la plantilla
     rutas_mostradas = []
