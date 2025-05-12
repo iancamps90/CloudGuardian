@@ -1,21 +1,31 @@
 {% extends "base.html" %}
+{% block title %}Eliminar usuario{% endblock %}
 
 {% block content %}
 
-<h2 class="text-xl font-bold mb-4">Eliminar usuario</h2>
+<h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Eliminar usuario</h2>
 
-<p class="mb-2 text-gray-300">Introduce el nombre del usuario que deseas eliminar. Esta acción es irreversible.</p>
+<p class="mb-4 text-gray-600 dark:text-gray-400">
+    Introduce el nombre del usuario que deseas eliminar. <span class="font-semibold text-red-500">Esta acción es irreversible.</span>
+</p>
 
-<form method="post" class="space-y-4">
+<form method="POST" class="space-y-4">
     {% csrf_token %}
-    <input type="text" name="username" placeholder="Nombre de usuario" class="w-full p-2 rounded bg-gray-800 text-white border border-gray-600" required>
-    <br>
-    <button type="submit" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-white">Eliminar usuario</button>
-    <a href="{% url 'home' %}" class="ml-4 text-blue-400 hover:underline">Cancelar</a>
+    <input type="text" name="username" placeholder="Nombre de usuario"
+        class="w-full p-2 rounded bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-red-400" required>
+
+    <div class="flex items-center gap-4">
+
+        <button type="submit" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-white shadow focus:ring-2 focus:ring-red-400 transition">
+            Eliminar usuario
+        </button>
+
+        <a href="{% url 'home' %}" class="text-blue-500 dark:text-blue-400 hover:underline text-sm">
+            Cancelar
+        </a>
+        
+    </div>
 </form>
 
-{% for message in messages %}
-    <p class="mt-2 text-yellow-300">{{ message }}</p>
-{% endfor %}
-
 {% endblock %}
+

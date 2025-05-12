@@ -1,13 +1,28 @@
+{% load static %}
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>CloudGuardian</title>
+    <title>{% block title %}CloudGuardian{% endblock %}</title>
 
+    <link rel="icon" type="image/png" href="{% static 'favicon.png' %}">
+
+    <script>
+        // Detecta el modo guardado en localStorage
+        if (localStorage.getItem('theme') === 'light') {
+            document.documentElement.classList.remove('dark');
+        } else {
+            document.documentElement.classList.add('dark');
+        }
+    </script>
+    
+    <!-- Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class', // modo oscuro
             theme: {
                 extend: {
                     animation: {
@@ -29,13 +44,20 @@
         }
     </script>
 </head>
-<body class="bg-gray-950 text-white min-h-screen flex flex-col">
+<body class="transition-colors duration-500 min-h-screen flex flex-col bg-white text-black dark:bg-gray-950 dark:text-white">
 
     <!-- HEADER -->
-    <header class="bg-gray-900 p-4 shadow flex justify-between items-center">
-        <h1 class="text-xl font-semibold">
+    <header class="bg-gray-100 dark:bg-gray-900 p-4 shadow flex justify-between items-center">
+        <h1 class="text-xl font-semibold tracking-tight">
             🛡️ CloudGuardian
         </h1>
+
+        <div class="flex gap-4 items-center">
+            <!-- Toggle modo claro/oscuro -->
+            <button onclick="toggleTheme()" class="bg-gray-200 dark:bg-gray-700 dark:text-white text-black hover:bg-gray-300 dark:hover:bg-gray-600 px-2 py-1 rounded text-sm">
+                🌙/☀️
+            </button>
+
         {% if user.is_authenticated %}
         <form method="POST" action="{% url 'logout' %}">
             {% csrf_token %}
@@ -48,46 +70,77 @@
             Iniciar sesión
         </a>
         {% endif %}
+        </div>
     </header>
 
     <div class="flex flex-grow">
 
         <!-- SIDEBAR -->
-        <aside class="w-64 bg-gray-900 p-4 hidden md:block">
+        <aside class="w-64 bg-gray-100 dark:bg-gray-900 p-4 hidden md:block">
             <nav class="space-y-2 text-sm">
-                <a href="{% url 'home' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/' %}bg-gray-800 font-bold{% endif %}">Inicio</a>
-                <a href="{% url 'configuracion' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/configuracion/' %}bg-gray-800 font-bold{% endif %}">Configuración</a>
-                <a href="{% url 'ips_bloqueadas' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/ips-bloqueadas/' %}bg-gray-800 font-bold{% endif %}">IPs Bloqueadas</a>
-                <a href="{% url 'rutas_protegidas' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/rutas-protegidas/' %}bg-gray-800 font-bold{% endif %}">Rutas Protegidas</a>
+                <a href="{% url 'home' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">Inicio</a>
+                <a href="{% url 'configuracion' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/configuracion/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">Configuración</a>
+                <a href="{% url 'ips_bloqueadas' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/ips-bloqueadas/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">IPs Bloqueadas</a>
+                <a href="{% url 'rutas_protegidas' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/rutas-protegidas/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">Rutas Protegidas</a>
                 {% if es_superuser %}
-                <a href="{% url 'eliminar_usuario' %}" class="block p-2 rounded hover:bg-gray-700 {% if request.path == '/usuarios/eliminar/' %}bg-gray-800 font-bold{% endif %}">Gestionar usuarios</a>
+                <a href="{% url 'eliminar_usuario' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/usuarios/eliminar/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">Gestionar usuarios</a>
                 {% endif %}
             </nav>
         </aside>
 
+        
         <!-- MENSAJES FLOTANTES -->
         {% if messages %}
-        <div class="fixed top-16 right-12 z-50 space-y-12">
+        <div id="messages" class="fixed top-4 right-4 z-50 space-y-2">
             {% for message in messages %}
-            <div class="px-4 py-2 rounded-lg shadow-md animate-slide-in
-                {% if message.tags == 'success' %}bg-green-600{% elif message.tags == 'error' %}bg-red-600{% elif message.tags == 'warning' %}bg-yellow-500{% else %}bg-gray-800{% endif %}">
+            <div class="alert px-3 py-2 text-sm rounded-md shadow-md text-white max-w-xs break-words animate-slide-in
+                {% if message.tags == 'success' %}bg-green-600{% elif message.tags == 'error' %}bg-red-600{% elif message.tags == 'warning' %}bg-yellow-500 text-black{% else %}bg-gray-700{% endif %}">
                 {{ message }}
             </div>
             {% endfor %}
         </div>
         {% endif %}
 
+
         <!-- CONTENIDO PRINCIPAL -->
-        <main class="flex-grow p-6">
+        <main class="flex-grow p-6 py-8">
             {% block content %}
             {% endblock %}
         </main>
     </div>
 
     <!-- FOOTER -->
-    <footer class="bg-gray-900 p-2 text-center text-xs text-gray-400">
+    <footer class="bg-gray-100 dark:bg-gray-900 p-2 text-center text-xs text-gray-500 dark:text-gray-400">
         © 2025 CloudGuardian · Todos los derechos reservados
     </footer>
 
+
+    <script>
+        // Oculta los mensajes automáticamente tras 3 segundos
+        setTimeout(() => {
+            const alerts = document.querySelectorAll('#messages .alert');
+            alerts.forEach(alert => {
+                alert.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+                setTimeout(() => alert.remove(), 500);  // Espera a que se desvanezca
+            });
+        }, 3000);
+    </script>
+    
+
+    <script>
+        function toggleTheme() {
+            const root = document.documentElement;
+            const isDark = root.classList.contains('dark');
+            if (isDark) {
+                root.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            } else {
+                root.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+    </script>
+
+    
 </body>
 </html>
