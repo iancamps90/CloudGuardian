@@ -1,5 +1,6 @@
 """ SISTEMA OPERATIVO """
 import datetime
+import ipaddress
 import os
 import json # para poder manejar archivos .json
 import requests
@@ -346,9 +347,14 @@ def ips_bloqueadas(request):
                 if not ip_add:
                     messages.warning(request, "Debes escribir una IP para bloquear.")
                     return redirect("ips_bloqueadas")
-                # Comprueba duplicados
+                # Validar formato
+                try:
+                    ipaddress.ip_network(ip_add)
+                except ValueError:
+                    messages.error(request, f"La IP «{ip_add}» no es válida.")
+                    return redirect("ips_bloqueadas")
                 if ip_add in deny:
-                    messages.info(request, f"La IP {ip_add} ya está bloqueada.")
+                    messages.info(request, f"La IP {ip_add} ya estaba bloqueada.")
                     return redirect("ips_bloqueadas")
 
                 # Añade al array de deny
@@ -435,93 +441,91 @@ def rutas_protegidas(request):
     - Permite eliminar rutas existentes
     - Reconstruye y recarga la configuración global de Caddy
     """
-    try:
+    
         # Obtiene el registro JSON del usuario
-        user_config = UserJSON.objects.get(user=request.user)
-        data = user_config.json_data
+    user_config = UserJSON.objects.get(user=request.user)
+    data = user_config.json_data
         
-        # Asegura la estructura nested en el JSON y obtiene la lista de rutas
-        rutas = data.setdefault("apps", {}) \
-                    .setdefault("http", {}) \
-                    .setdefault("servers", {}) \
-                    .setdefault("Cloud_Guardian", {}) \
-                    .setdefault("routes", [])
+    # Asegura la estructura nested en el JSON y obtiene la lista de rutas
+    rutas = data.setdefault("apps", {}) \
+                .setdefault("http", {}) \
+                .setdefault("servers", {}) \
+                .setdefault("Cloud_Guardian", {}) \
+                    setdefault("routes", [])
 
-        # Extrae sólo los paths (strings) para renderizar en la plantilla
-        rutas_mostradas = []
-        for r in rutas:
-            for m in r.get("match", []):
-                rutas_mostradas += m.get("path", [])
+    # Extrae sólo los paths (strings) para renderizar en la plantilla
+    rutas_mostradas = []
+    for r in rutas:
+        for m in r.get("match", []):
+            rutas_mostradas += m.get("path", [])
 
-        # Si se envía el formulario, procesa ADD o DELETE
-        if request.method == "POST":
-            action = request.POST.get("action")
-            ruta_add = request.POST.get("ruta_add", "").strip()
-            ruta_del = request.POST.get("ruta_delete", "").strip()
+    # Si se envía el formulario, procesa ADD o DELETE
+    if request.method == "POST":
+        action = request.POST.get("action")
+        ruta_add = request.POST.get("ruta_add", "").strip()
+        ruta_del = request.POST.get("ruta_delete", "").strip()
 
-            # --- ADD ---
-            if action == "add":
-                # Validaciones básicas
-                if not ruta_add:
-                    messages.warning(request, "Debes escribir una ruta para añadir.")
-                    return redirect("rutas_protegidas")
-                if not ruta_add.startswith(f"/{request.user.username}/"):
-                    messages.error(request, "Sólo puedes proteger rutas bajo tu usuario.")
-                    return redirect("rutas_protegidas")
-                # Comprueba duplicados
-                if any(ruta_add in m.get("path", []) for r in rutas for m in r.get("match", [])):
-                    messages.info(request, f"La ruta {ruta_add} ya existe.")
-                    return redirect("rutas_protegidas")
-
-                # Construye la nueva ruta al formato Caddy
-                nueva = {
-                    "match": [{"path": [ruta_add]}],
-                    "handle": [{"handler": "static_response", "body": f"Acceso permitido a {ruta_add}"}]
-                }
-                
-                # Añade al JSON del usuario y guarda
-                rutas.append(nueva)
-                user_config.json_data = data
-                user_config.save()
-                
-                # Reconstruye la configuración global y recarga Caddy
-                ok, msg = construir_configuracion_global()
-                if ok:
-                    messages.success(request, f"Ruta {ruta_add} añadida correctamente. {msg}")
-                else:
-                    messages.error(request, f"Ruta {ruta_add} añadida pero error recargando Caddy: {msg}")
+        # --- ADD ---
+        if action == "add":
+            # Validaciones básicas
+            if not ruta_add:
+                messages.warning(request, "Debes escribir una ruta para añadir.")
+                return redirect("rutas_protegidas")
+            if not ruta_add.startswith(f"/{request.user.username}/"):
+                messages.error(request, "Sólo puedes proteger rutas bajo tu usuario.")
+                return redirect("rutas_protegidas")
+            # Comprueba duplicados
+            if any(ruta_add in m.get("path", []) for r in rutas for m in r.get("match", [])):
+                messages.info(request, f"La ruta {ruta_add} ya existe.")
                 return redirect("rutas_protegidas")
 
-            # --- DELETE ---
-            if action == "delete":
-                if not ruta_del:
-                    messages.warning(request, "Debes escribir una ruta para eliminar.")
-                    return redirect("rutas_protegidas")
+            # Construye la nueva ruta al formato Caddy
+            nueva = {
+                "match": [{"path": [ruta_add]}],
+                "handle": [{"handler": "static_response", "body": f"Acceso permitido a {ruta_add}"}]
+            }
                 
-                # Filtra rutas que no coincidan con la ruta a eliminar
-                nuevas = [r for r in rutas if ruta_del not in r.get("match", [{}])[0].get("path", [])]
+            # Añade al JSON del usuario y guarda
+            rutas.append(nueva)
+            user_config.json_data = data
+            user_config.save()
                 
-                # Si no cambió el número de rutas, la ruta no existía
-                if len(nuevas) == len(rutas):
-                    messages.warning(request, f"La ruta {ruta_del} no existe.")
-                    return redirect("rutas_protegidas")
+            # Reconstruye la configuración global y recarga Caddy
+            ok, msg = construir_configuracion_global()
+            if ok:
+                messages.success(request, f"Ruta {ruta_add} añadida correctamente. {msg}")
+            else:
+                messages.error(request, f"Ruta {ruta_add} añadida pero error recargando Caddy: {msg}")
+            return redirect("rutas_protegidas")
 
-                # Guarda los cambios en el JSON del usuario
-                data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"] = nuevas
-                user_config.json_data = data
-                user_config.save()
+        # --- DELETE ---
+        if action == "delete":
+            if not ruta_del:
+                messages.warning(request, "Debes escribir una ruta para eliminar.")
+                return redirect("rutas_protegidas")
                 
-                # Reconstruye y recarga Caddy
-                ok, msg = construir_configuracion_global()
-                if ok:
-                    messages.success(request, f"Ruta {ruta_del} eliminada correctamente. {msg}")
-                else:
-                    messages.error(request, f"Ruta {ruta_del} eliminada pero error recargando Caddy: {msg}")
+            # Filtra rutas que no coincidan con la ruta a eliminar
+            nuevas = [r for r in rutas if ruta_del not in r.get("match", [{}])[0].get("path", [])]
+                
+            # Si no cambió el número de rutas, la ruta no existía
+            if len(nuevas) == len(rutas):
+                messages.warning(request, f"La ruta {ruta_del} no existe.")
                 return redirect("rutas_protegidas")
 
-    except Exception as e:
-        # Captura de errores generales al cargar la vista
-        messages.error(request, f"Error interno al cargar rutas: {e}")
+            # Guarda los cambios en el JSON del usuario
+            data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"] = nuevas
+            user_config.json_data = data
+            user_config.save()
+                
+            # Reconstruye y recarga Caddy
+            ok, msg = construir_configuracion_global()
+            if ok:
+                messages.success(request, f"Ruta {ruta_del} eliminada correctamente. {msg}")
+            else:
+                messages.error(request, f"Ruta {ruta_del} eliminada pero error recargando Caddy: {msg}")
+            return redirect("rutas_protegidas")
+
+    
 
     # Renderiza la plantilla, pasando únicamente los paths
     return render(request, "rutas_protegidas.html", {
