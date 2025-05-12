@@ -315,7 +315,6 @@ def ips_bloqueadas(request):
                     .setdefault("Cloud_Guardian", {}) \
                     .setdefault("routes", [])
 
-
         # Busca la ruta de bloqueo de IPs específica de este usuario
         ruta_bloqueadas = next((
             r for r in rutas
@@ -354,6 +353,7 @@ def ips_bloqueadas(request):
 
                 # Añade al array de deny
                 deny.append(ip_add)
+
 
                 
                 # Construye (o actualiza) la ruta de Caddy
@@ -412,6 +412,7 @@ def ips_bloqueadas(request):
                 else:
                     messages.error(request, f"IP {ip_del} desbloqueada pero error recargando Caddy: {msg}")
                 return redirect("ips_bloqueadas")
+
 
     except Exception as e:
         # Captura cualquier error y lo muestra
