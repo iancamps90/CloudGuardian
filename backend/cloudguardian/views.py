@@ -300,6 +300,9 @@ def ips_bloqueadas(request):
     - Permite agregar o eliminar IPs de bloqueo.
     - Reconstruye la configuración global de Caddy tras cambios.
     """
+    allow = []
+    deny = []
+    
     try:
         # Carga el UserJSON del usuario actual
         user_config = UserJSON.objects.get(user=request.user)
@@ -312,6 +315,7 @@ def ips_bloqueadas(request):
                     .setdefault("Cloud_Guardian", {}) \
                     .setdefault("routes", [])
 
+
         # Busca la ruta de bloqueo de IPs específica de este usuario
         ruta_bloqueadas = next((
             r for r in rutas
@@ -319,14 +323,13 @@ def ips_bloqueadas(request):
                 f"/{request.user.username}/" in r["match"][0].get("path", [""])[0]
         ), None)
 
-
-        # Preparación de los arrays allow / deny en el JSON de "security"
+        # Inicializa allow/deny en la sección de security → remote_ip
         remote = data.setdefault("apps", {}) \
                     .setdefault("http", {}) \
                     .setdefault("security", {}) \
                     .setdefault("remote_ip", {})
         allow = remote.setdefault("allow", [])
-        deny  = remote.setdefault("deny", [])
+        deny = remote.setdefault("deny", [])
 
         # Si ya existía una ruta personalizada, carga sus rangos actuales
         if ruta_bloqueadas:
@@ -351,6 +354,7 @@ def ips_bloqueadas(request):
 
                 # Añade al array de deny
                 deny.append(ip_add)
+
                 
                 # Construye (o actualiza) la ruta de Caddy
                 nueva = {

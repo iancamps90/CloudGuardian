@@ -14,14 +14,33 @@
                             "match": [
                                 {
                                     "path": [
+<<<<<<< Updated upstream
                                         "/ian90/*"
+=======
+                                        "/juan/*"
+>>>>>>> Stashed changes
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
+<<<<<<< Updated upstream
                                     "handler": "static_response",
                                     "body": "Acceso permitido a ian90"
+=======
+                                    "handler": "remote_ip",
+                                    "deny": [
+                                        "1.2.3.4"
+                                    ]
+                                },
+                                {
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [
+                                        {
+                                            "dial": "localhost:8000"
+                                        }
+                                    ]
+>>>>>>> Stashed changes
                                 }
                             ]
                         },
@@ -29,7 +48,27 @@
                             "match": [
                                 {
                                     "path": [
+<<<<<<< Updated upstream
                                         "/api/*"
+=======
+                                        "/maria/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "remote_ip",
+                                    "deny": [
+                                        "2.3.4.5"
+                                    ]
+                                },
+                                {
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [
+                                        {
+                                            "dial": "localhost:8000"
+                                        }
+>>>>>>> Stashed changes
                                     ]
                                 }
                             ],
