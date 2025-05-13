@@ -381,54 +381,49 @@ def ips_bloqueadas(request):
                 # Validación de campo no vacío
                 if not ip_add:
                     messages.warning(request, "Debes escribir una IP para bloquear.")
-                    return redirect("ips_bloqueadas")
-                # Validar formato
-                try:
-                    ipaddress.ip_network(ip_add)
-                except ValueError:
-                    messages.error(request, f"La IP «{ip_add}» no es válida.")
-                    return redirect("ips_bloqueadas")
-                
-                if ip_add in deny:
-                    messages.info(request, f"La IP {ip_add} ya estaba bloqueada.")
-                    return redirect("ips_bloqueadas")
-
-                # Añade al array de deny
-                deny.append(ip_add)
-
-
-                
-                # Construye (o actualiza) la ruta de Caddy
-                nueva = {
-                    "match": [
-                        {
-                            "path": [f"/{request.user.username}/*"],
-                            "remote_ip": {"ranges": deny}
-                        }
-                    ],
-                    "handle": [
-                        {
-                            "handler": "static_response",
-                            "status_code": 403,
-                            "body": "IP bloqueada"
-                        }
-                    ]
-                }
-                if ruta_bloqueadas:
-                    rutas[rutas.index(ruta_bloqueadas)] = nueva
                 else:
-                    rutas.insert(0, nueva)
+                    # validación de formato
+                    try:
+                        ipaddress.ip_network(ip_add)
+                    except ValueError:
+                        messages.error(request, f"La IP «{ip_add}» no es válida.")
+                    else:
+                        if ip_add in deny:
+                            messages.info(request, f"La IP {ip_add} ya estaba bloqueada.")
+                        else:
 
-                # Guarda cambios en la base de datos
-                user_config.json_data = data
-                user_config.save()
+                            # Añade al array de deny
+                            deny.append(ip_add)
+
+
                 
-                # Reconstruye y recarga Caddy
-                ok, msg = construir_configuracion_global()
-                if ok:
-                    messages.success(request, f"IP {ip_add} bloqueada correctamente. {msg}")
-                else:
-                    messages.error(request, f"IP {ip_add} bloqueada pero error recargando Caddy: {msg}")
+                            # Construye (o actualiza) la ruta de Caddy
+                        nueva = {
+                                "match": [{
+                                    "path": [f"/{request.user.username}/*"],
+                                    "remote_ip": {"ranges": deny}
+                                }],
+                                "handle": [{
+                                    "handler": "static_response",
+                                    "status_code": 403,
+                                    "body": "IP bloqueada"
+                                }]
+                            }
+                        if ruta_bloqueadas:
+                            rutas[rutas.index(ruta_bloqueadas)] = nueva
+                        else:
+                            rutas.insert(0, nueva)
+
+                        # Guarda cambios en la base de datos
+                        user_config.json_data = data
+                        user_config.save()
+                
+                        # Reconstruye y recarga Caddy
+                        ok, msg = construir_configuracion_global()
+                        if ok:
+                            messages.success(request, f"IP {ip_add} bloqueada correctamente. {msg}")
+                        else:
+                            messages.error(request, f"IP {ip_add} bloqueada pero error recargando Caddy: {msg}")
                 return redirect("ips_bloqueadas")
 
             # --- DELETE: desbloquear una IP existente ---
@@ -436,35 +431,34 @@ def ips_bloqueadas(request):
                 # Validación de campo no vacío
                 if not ip_del:
                     messages.warning(request, "Debes escribir una IP para desbloquear.")
-                    return redirect("ips_bloqueadas")
                 # Comprueba que la IP está bloqueada
-                if ip_del not in deny:
-                    messages.warning(request, f"La IP {ip_del} no está en la lista.")
-                    return redirect("ips_bloqueadas")
-
-                # Remueve del array deny
-                deny.remove(ip_del)
-                
-                # Si la ruta existía, actualiza sus rangos o la elimina si quedó vacía
-                if ruta_bloqueadas:
-                    if deny:
-                        # actualiza lista en ruta existente
-                        ruta_bloqueadas["match"][0]["remote_ip"]["ranges"] = deny
-                    else:
-                        # si ya no hay IPs, quita la ruta
-                        rutas.remove(ruta_bloqueadas)
-
-                # Guarda cambios
-                user_config.json_data = data
-                user_config.save()
-                
-                
-                # Reconstruye y recarga Caddy
-                ok, msg = construir_configuracion_global()
-                if ok:
-                    messages.success(request, f"IP {ip_del} desbloqueada correctamente. {msg}")
+                elif ip_del not in deny:
+                    messages.warning(request, f"La IP {ip_del} no estaba bloqueada.")
                 else:
-                    messages.error(request, f"IP {ip_del} desbloqueada pero error recargando Caddy: {msg}")
+
+                    # Remueve del array deny
+                    deny.remove(ip_del)
+                
+                    # Si la ruta existía, actualiza sus rangos o la elimina si quedó vacía
+                    if ruta_bloqueadas:
+                        if deny:
+                            # actualiza lista en ruta existente
+                            ruta_bloqueadas["match"][0]["remote_ip"]["ranges"] = deny
+                        else:
+                            # si ya no hay IPs, quita la ruta
+                            rutas.remove(ruta_bloqueadas)
+
+                    # Guarda cambios
+                    user_config.json_data = data
+                    user_config.save()
+                
+                
+                    # Reconstruye y recarga Caddy
+                    ok, msg = construir_configuracion_global()
+                    if ok:
+                        messages.success(request, f"IP {ip_del} desbloqueada correctamente. {msg}")
+                    else:
+                        messages.error(request, f"IP {ip_del} desbloqueada pero error recargando Caddy: {msg}")
                 return redirect("ips_bloqueadas")
 
 
@@ -540,18 +534,18 @@ def rutas_protegidas(request):
                     "handle": [{"handler": "static_response", "body": f"Acceso permitido a {ruta_add}"}]
                 }
                 
-            # Añade al JSON del usuario y guarda
-            rutas.append(nueva)
-            user_config.json_data = data
-            user_config.save()
+                # Añade al JSON del usuario y guarda
+                rutas.append(nueva)
+                user_config.json_data = data
+                user_config.save()
                 
-            # Reconstruye la configuración global y recarga Caddy
+                # Reconstruye la configuración global y recarga Caddy
 
-            ok, msg = construir_configuracion_global()
-            if ok:
-                messages.success(request, f"Ruta {ruta_add} añadida correctamente. {msg}")
-            else:
-                messages.error(request, f"Ruta {ruta_add} añadida pero error recargando Caddy: {msg}")
+                ok, msg = construir_configuracion_global()
+                if ok:
+                    messages.success(request, f"Ruta {ruta_add} añadida correctamente. {msg}")
+                else:
+                    messages.error(request, f"Ruta {ruta_add} añadida pero error recargando Caddy: {msg}")
 
         # --- DELETE ---
         elif action == "delete":
