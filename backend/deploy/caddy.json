@@ -127,14 +127,14 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/ian1990/fffff"
+                                        "/ian1990/cccc"
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/fffff"
+                                    "body": "Acceso permitido a /ian1990/cccc"
                                 }
                             ]
                         },
