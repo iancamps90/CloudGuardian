@@ -79,13 +79,9 @@ def construir_configuracion_global():
     
     # 2) Rutas de usuario... Aqui vamos a recorrer todos los .json de los usuario uniendolos al base para tener un .json con todas las configuraciones
     for ujson in UserJSON.objects.all():
-        rutas = ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
-        rutas_globales.extend(rutas)
-
-
-    # 3), un catch-all para Django
+        rutas_globales.extend(ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"])
+    # 3) Catch-all a Django
     rutas_globales.append({
-        # sin “match” => coincide TODO
         "handle": [
             {
                 "handler": "reverse_proxy",
@@ -95,6 +91,8 @@ def construir_configuracion_global():
             }
         ]
     })
+
+
     
     # Ahora guardamos el .json base que hemos creado en caddy.json
     with open(JSON_PATH, "w", encoding = "utf-8") as f:
@@ -102,14 +100,16 @@ def construir_configuracion_global():
 
     # Por ultimo recargamos caddy
     try:
-        response = requests.post(os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load", json=base)
-        if response.status_code != 200:
-            print(f"⚠️ Error al recargar Caddy. Código: {response.status_code}, Respuesta: {response.text}")
-            return False, f"Error al recargar Caddy: {response.status_code} - {response.text}"
-        return True, "Configuración global generada correctamente."
-
-    except Exception as e:
-        return False, f"Error recargando Caddy: {e}"
+        resp = requests.post(
+            os.environ.get("CADDY_ADMIN", "http://localhost:2019") + "/load",
+            json=base, timeout=2
+        )
+        if resp.status_code == 200:
+            return True, "Configuración global generada correctamente."
+        return False, f"Error al recargar Caddy: {resp.status_code} – {resp.text}"
+    except requests.exceptions.RequestException as e:
+        # Si no podemos conectarnos, lo tratamos como warning en desarrollo
+        return True, f"Configuración escrita, pero no se pudo recargar Caddy: {e}"
 
 """ 🔵 VISTAS CLÁSICAS PARA TEMPLATES 🔵 """
 
@@ -348,18 +348,21 @@ def ips_bloqueadas(request):
                     .setdefault("Cloud_Guardian", {}) \
                     .setdefault("routes", [])
 
-        # Busca la ruta de bloqueo de IPs específica de este usuario
-        ruta_bloqueadas = next((
-            r for r in rutas
-            if r.get("match", [{}])[0].get("remote_ip") and
-                f"/{request.user.username}/" in r["match"][0].get("path", [""])[0]
-        ), None)
+        # Busca, si existe, la ruta de remote_ip específica de este usuario
+        ruta_bloqueadas = None
+        for r in rutas:
+            matcher = r.get("match", [{}])[0]
+            if "remote_ip" in matcher and f"/{request.user.username}/" in matcher.get("path", [""])[0]:
+                ruta_bloqueadas = r
+                break
 
         # Inicializa allow/deny en la sección de security → remote_ip
-        remote = data.setdefault("apps", {}) \
-                    .setdefault("http", {}) \
-                    .setdefault("security", {}) \
-                    .setdefault("remote_ip", {})
+        remote = (
+            data.setdefault("apps", {})
+                .setdefault("http", {})
+                .setdefault("security", {})
+                .setdefault("remote_ip", {})
+        )
         allow = remote.setdefault("allow", [])
         deny = remote.setdefault("deny", [])
 
@@ -385,6 +388,7 @@ def ips_bloqueadas(request):
                 except ValueError:
                     messages.error(request, f"La IP «{ip_add}» no es válida.")
                     return redirect("ips_bloqueadas")
+                
                 if ip_add in deny:
                     messages.info(request, f"La IP {ip_add} ya estaba bloqueada.")
                     return redirect("ips_bloqueadas")
@@ -396,8 +400,19 @@ def ips_bloqueadas(request):
                 
                 # Construye (o actualiza) la ruta de Caddy
                 nueva = {
-                    "match": [{"path": [f"/{request.user.username}/*"], "remote_ip": {"ranges": deny}}],
-                    "handle": [{"handler": "static_response", "status_code": 403, "body": "IP bloqueada"}]
+                    "match": [
+                        {
+                            "path": [f"/{request.user.username}/*"],
+                            "remote_ip": {"ranges": deny}
+                        }
+                    ],
+                    "handle": [
+                        {
+                            "handler": "static_response",
+                            "status_code": 403,
+                            "body": "IP bloqueada"
+                        }
+                    ]
                 }
                 if ruta_bloqueadas:
                     rutas[rutas.index(ruta_bloqueadas)] = nueva
@@ -443,6 +458,7 @@ def ips_bloqueadas(request):
                 user_config.json_data = data
                 user_config.save()
                 
+                
                 # Reconstruye y recarga Caddy
                 ok, msg = construir_configuracion_global()
                 if ok:
@@ -452,8 +468,9 @@ def ips_bloqueadas(request):
                 return redirect("ips_bloqueadas")
 
 
+    except UserJSON.DoesNotExist:
+        messages.error(request, "No se encontró configuración para este usuario.")
     except Exception as e:
-        # Captura cualquier error y lo muestra
         messages.error(request, f"Error interno al cargar IPs: {e}")
 
     # Renderiza la plantilla con las listas actuales
@@ -473,29 +490,31 @@ def rutas_protegidas(request):
     - Permite eliminar rutas existentes
     - Reconstruye y recarga la configuración global de Caddy
     """
+    rutas_mostradas = []
     
         # Obtiene el registro JSON del usuario
-    user_config = UserJSON.objects.get(user=request.user)
-    data = user_config.json_data
+    try:
+        user_config = UserJSON.objects.get(user=request.user)
+        data = user_config.json_data
         
-    # Asegura la estructura nested en el JSON y obtiene la lista de rutas
-    rutas = data.setdefault("apps", {}) \
-                .setdefault("http", {}) \
-                .setdefault("servers", {}) \
-                .setdefault("Cloud_Guardian", {}) \
-                .setdefault("routes", [])
+        # Asegura la estructura nested en el JSON y obtiene la lista de rutas
+        rutas = (data.setdefault("apps", {})
+                    .setdefault("http", {})
+                    .setdefault("servers", {})
+                    .setdefault("Cloud_Guardian", {})
+                    .setdefault("routes", []))
 
-    # Extrae sólo los paths (strings) para renderizar en la plantilla
-    rutas_mostradas = []
-    for r in rutas:
-        for m in r.get("match", []):
-            rutas_mostradas += m.get("path", [])
+        # Extrae sólo los paths (strings) para renderizar en la plantilla
+        
+        for r in rutas:
+            for m in r.get("match", []):
+                rutas_mostradas.extend(m.get("path", []))
 
-    # Si se envía el formulario, procesa ADD o DELETE
-    if request.method == "POST":
-        action = request.POST.get("action")
-        ruta_add = request.POST.get("ruta_add", "").strip()
-        ruta_del = request.POST.get("ruta_delete", "").strip()
+        # Si se envía el formulario, procesa ADD o DELETE
+        if request.method == "POST":
+            action = request.POST.get("action")
+            ruta_add = request.POST.get("ruta_add", "").strip()
+            ruta_del = request.POST.get("ruta_delete", "").strip()
 
         # --- ADD ---
         if action == "add":
@@ -523,21 +542,23 @@ def rutas_protegidas(request):
             user_config.save()
                 
             # Reconstruye la configuración global y recarga Caddy
+
             ok, msg = construir_configuracion_global()
-            if ok:
-                messages.success(request, f"Ruta {ruta_add} añadida correctamente. {msg}")
-            else:
-                messages.error(request, f"Ruta {ruta_add} añadida pero error recargando Caddy: {msg}")
+            (messages.success if ok else messages.error)(
+                request,
+                f"Ruta {ruta_add} añadida correctamente. {msg}"
+            )
             return redirect("rutas_protegidas")
 
         # --- DELETE ---
-        if action == "delete":
+        elif action == "delete":
             if not ruta_del:
                 messages.warning(request, "Debes escribir una ruta para eliminar.")
                 return redirect("rutas_protegidas")
                 
             # Filtra rutas que no coincidan con la ruta a eliminar
-            nuevas = [r for r in rutas if ruta_del not in r.get("match", [{}])[0].get("path", [])]
+            nuevas = [r for r in rutas 
+                    if ruta_del not in r.get("match", [{}])[0].get("path", [])]
                 
             # Si no cambió el número de rutas, la ruta no existía
             if len(nuevas) == len(rutas):
@@ -551,13 +572,16 @@ def rutas_protegidas(request):
                 
             # Reconstruye y recarga Caddy
             ok, msg = construir_configuracion_global()
-            if ok:
-                messages.success(request, f"Ruta {ruta_del} eliminada correctamente. {msg}")
-            else:
-                messages.error(request, f"Ruta {ruta_del} eliminada pero error recargando Caddy: {msg}")
+            (messages.success if ok else messages.error)(
+                request,
+                f"Ruta {ruta_del} eliminada correctamente. {msg}"
+            )
             return redirect("rutas_protegidas")
 
-    
+    except UserJSON.DoesNotExist:
+        messages.error(request, "No se encontró configuración para este usuario.")
+    except Exception as e:
+        messages.error(request, f"Error interno al cargar rutas: {e}")
 
     # Renderiza la plantilla, pasando únicamente los paths
     return render(request, "rutas_protegidas.html", {

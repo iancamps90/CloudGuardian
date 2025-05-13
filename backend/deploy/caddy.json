@@ -14,6 +14,21 @@
                             "match": [
                                 {
                                     "path": [
+                                        "/static/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "file_server",
+                                    "root": "/home/despliegue-nube/cloudguardian/backend/static"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
                                         "/ian90/*"
                                     ]
                                 }
@@ -22,39 +37,6 @@
                                 {
                                     "handler": "static_response",
                                     "body": "Acceso permitido a ian90"
-                                },
-                                {
-                                    "handler": "reverse_proxy",
-                                    "upstreams": [
-                                        {
-                                            "dial": "localhost:8000"
-                                        }
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/maria/*"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "remote_ip",
-                                    "deny": [
-                                        "2.3.4.5"
-                                    ]
-                                },
-                                {
-                                    "handler": "reverse_proxy",
-                                    "upstreams": [
-                                        {
-                                            "dial": "localhost:8000"
-                                        }
-                                    ]
                                 }
                             ]
                         },
@@ -83,7 +65,7 @@
                                         "ranges": [
                                             "123.333.222.11",
                                             "111.222.333.33",
-                                            "111.111.333.11"
+                                            "222.222.222.22"
                                         ]
                                     }
                                 }
@@ -93,21 +75,6 @@
                                     "handler": "static_response",
                                     "status_code": 403,
                                     "body": "IP bloqueada"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/casa"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/casa"
                                 }
                             ]
                         },
@@ -145,6 +112,21 @@
                             "match": [
                                 {
                                     "path": [
+                                        "/ian1990/ddd"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "static_response",
+                                    "body": "Acceso permitido a /ian1990/ddd"
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
                                         "/nube/*"
                                     ],
                                     "remote_ip": {
@@ -174,6 +156,18 @@
                                 {
                                     "handler": "static_response",
                                     "body": "Acceso permitido a /nube/trabajo"
+                                }
+                            ]
+                        },
+                        {
+                            "handle": [
+                                {
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [
+                                        {
+                                            "dial": "127.0.0.1:8000"
+                                        }
+                                    ]
                                 }
                             ]
                         }
