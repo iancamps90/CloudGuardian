@@ -58,12 +58,44 @@ def construir_configuracion_global():
             }
         }
     }
+    
+    rutas_globales = base["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
 
-    # Aqui vamos a recorrer todos los .json de los usuario uniendolos al base para tener un .json con todas las configuraciones
+
+
+    # 1) Sirve /static/* directamente desde el disco
+    rutas_globales.append({
+        "match": [
+            { "path": ["/static/*"] }
+        ],
+        "handle": [
+            {
+                "handler": "file_server",
+                # pon aquí la ruta absoluta donde está tu carpeta static en el servidor:
+                "root": "/home/despliegue-nube/cloudguardian/backend/static"
+            }
+        ]
+    })
+    
+    # 2) Rutas de usuario... Aqui vamos a recorrer todos los .json de los usuario uniendolos al base para tener un .json con todas las configuraciones
     for ujson in UserJSON.objects.all():
         rutas = ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
-        base["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"].extend(rutas)
+        rutas_globales.extend(rutas)
 
+
+    # 3), un catch-all para Django
+    rutas_globales.append({
+        # sin “match” => coincide TODO
+        "handle": [
+            {
+                "handler": "reverse_proxy",
+                "upstreams": [
+                    { "dial": "127.0.0.1:8000" }
+                ]
+            }
+        ]
+    })
+    
     # Ahora guardamos el .json base que hemos creado en caddy.json
     with open(JSON_PATH, "w", encoding = "utf-8") as f:
         json.dump(base, f, indent = 4)
