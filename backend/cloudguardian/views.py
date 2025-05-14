@@ -41,6 +41,16 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Ruta al NUEVO caddy.json GENERADO DINAMICAMENTE
 JSON_PATH = os.path.join(BASE_DIR, "deploy", "caddy.json") # Eso construye la ruta relativa correcta al caddy.json aunque estés dentro del contenedor o en local
 
+
+def _ip_valida(cadena: str) -> bool:
+    try:
+        ipaddress.ip_network(cadena)
+        return True
+    except ValueError:
+        return False
+
+
+
 # Función mejorada para construir el caddy global y recargar Caddy automáticamente
 def construir_configuracion_global():
     
@@ -49,7 +59,7 @@ def construir_configuracion_global():
         1. /static/* servido en disco
         2. Todas las rutas de todos los usuarios
             (¡filtrando remote_ip vacíos!)
-        3. Catch-all → Gunicorn en 127.0.0.1:8000
+        3. Catch-all → Gunicorn en 8000
     Después intenta recargar Caddy por la API.
     """
     
@@ -88,30 +98,29 @@ def construir_configuracion_global():
     
     # 2) Rutas de usuario... Aqui vamos a recorrer todos los .json de los usuario uniendolos al base para tener un .json con todas las configuraciones
     for ujson in UserJSON.objects.all():
-        rutas_usuario = ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
-
-        for r in rutas_usuario:
-            m = r.get("match", [{}])[0]
-            if "remote_ip" in m and not m["remote_ip"].get("ranges"):
-                # ⛔ saltamos /nube/* con "ranges": []
+        for ruta in ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]:
+            matcher = ruta.get("match", [{}])[0]
+            if "remote_ip" in matcher:
+                rng = [r for r in matcher["remote_ip"].get("ranges", []) if _ip_valida(r)]
+            if not rng:                # si no queda ningún rango → descarta ruta
                 continue
-            rutas_globales.append(r)
+            matcher["remote_ip"]["ranges"] = rng
+        rutas_globales.append(ruta)
         
         
-    # 3) Catch-all a Django
+    # 3) Catch-all a Gunicorn
     rutas_globales.append({
         "handle": [
             {
                 "handler": "reverse_proxy",
                 "upstreams": [
-                    { "dial": "127.0.0.1:8000" }
+                    { "dial": ":8000" }
                 ]
             }
         ]
     })
 
 
-    
     # Ahora guardamos el .json base que hemos creado en caddy.json
     with open(JSON_PATH, "w", encoding = "utf-8") as f:
         json.dump(base, f, indent = 4)
@@ -127,7 +136,7 @@ def construir_configuracion_global():
         return False, f"Error al recargar Caddy: {resp.status_code} – {resp.text}"
     except requests.exceptions.RequestException as e:
         # Si no podemos conectarnos, lo tratamos como warning en desarrollo
-        return True, f"Configuración escrita, pero no se pudo recargar Caddy: {e}"
+        return True, f"No se pudo contactar con Caddy: {e}"
 
 """ 🔵 VISTAS CLÁSICAS PARA TEMPLATES 🔵 """
 
