@@ -346,151 +346,127 @@ def configuracion(request):
 @login_required
 def ips_bloqueadas(request):
     """
-    Vista para gestionar las IPs bloqueadas de cada usuario:
-    - Muestra las IPs permitidas y denegadas actuales.
-    - Permite agregar o eliminar IPs de bloqueo.
-    - Reconstruye la configuración global de Caddy tras cambios.
+    Gestiona la lista de IP permitidas/denegadas del usuario y
+    reconstruye Caddy evitando IPs mal formadas.
     """
-    allow = []
-    deny = []
+    allow: list[str] = []
+    deny:  list[str] = []
     
     try:
         # Carga el UserJSON del usuario actual
         user_config = UserJSON.objects.get(user=request.user)
         data = user_config.json_data
         
-        # Asegura la estructura apps → http → servers → Cloud_Guardian → routes
-        rutas = data.setdefault("apps", {}) \
-                    .setdefault("http", {}) \
-                    .setdefault("servers", {}) \
-                    .setdefault("Cloud_Guardian", {}) \
-                    .setdefault("routes", [])
-
-        # Busca, si existe, la ruta de remote_ip específica de este usuario
-        ruta_bloqueadas = None
-        for r in rutas:
-            matcher = r.get("match", [{}])[0]
-            if "remote_ip" in matcher and f"/{request.user.username}/" in matcher.get("path", [""])[0]:
-                ruta_bloqueadas = r
-                break
-
-        # Inicializa allow/deny en la sección de security → remote_ip
-        remote = (
-            data.setdefault("apps", {})
-                .setdefault("http", {})
-                .setdefault("security", {})
-                .setdefault("remote_ip", {})
-        )
-        allow = remote.setdefault("allow", [])
-        deny = remote.setdefault("deny", [])
-
-        # Si ya existía una ruta personalizada, carga sus rangos actuales
-        if ruta_bloqueadas:
-            deny[:] = ruta_bloqueadas["match"][0]["remote_ip"].get("ranges", [])
-
-        # Procesa el formulario POST (añadir o eliminar IP)
-        if request.method == "POST":
-            action = request.POST.get("action")
-            ip_add = request.POST.get("ip_add", "").strip()
-            ip_del = request.POST.get("ip_delete", "").strip()
-
-            # --- ADD: bloquear una nueva IP ---
-            if action == "add":
-                # Validación de campo no vacío
-                if not ip_add:
-                    messages.warning(request, "Debes escribir una IP para bloquear.")
-                else:
-                    # validación de formato
-                    try:
-                        ipaddress.ip_network(ip_add)
-                    except ValueError:
-                        messages.error(request, f"La IP «{ip_add}» no es válida.")
-                    else:
-                        if ip_add in deny:
-                            messages.info(request, f"La IP {ip_add} ya estaba bloqueada.")
-                        else:
-
-                            # Añade al array de deny
-                            deny.append(ip_add)
-
-
-                
-                            # Construye (o actualiza) la ruta de Caddy
-                        nueva = {
-                                "match": [{
-                                    "path": [f"/{request.user.username}/*"],
-                                    "remote_ip": {"ranges": deny}
-                                }],
-                                "handle": [{
-                                    "handler": "static_response",
-                                    "status_code": 403,
-                                    "body": "IP bloqueada"
-                                }]
-                            }
-                        if ruta_bloqueadas:
-                            rutas[rutas.index(ruta_bloqueadas)] = nueva
-                        else:
-                            rutas.insert(0, nueva)
-
-                        # Guarda cambios en la base de datos
-                        user_config.json_data = data
-                        user_config.save()
-                
-                        # Reconstruye y recarga Caddy
-                        ok, msg = construir_configuracion_global()
-                        if ok:
-                            messages.success(request, f"IP {ip_add} bloqueada correctamente. {msg}")
-                        else:
-                            messages.error(request, f"IP {ip_add} bloqueada pero error recargando Caddy: {msg}")
-                return redirect("ips_bloqueadas")
-
-            # --- DELETE: desbloquear una IP existente ---
-            if action == "delete":
-                # Validación de campo no vacío
-                if not ip_del:
-                    messages.warning(request, "Debes escribir una IP para desbloquear.")
-                # Comprueba que la IP está bloqueada
-                elif ip_del not in deny:
-                    messages.warning(request, f"La IP {ip_del} no estaba bloqueada.")
-                else:
-
-                    # Remueve del array deny
-                    deny.remove(ip_del)
-                
-                    # Si la ruta existía, actualiza sus rangos o la elimina si quedó vacía
-                    if ruta_bloqueadas:
-                        if deny:
-                            # actualiza lista en ruta existente
-                            ruta_bloqueadas["match"][0]["remote_ip"]["ranges"] = deny
-                        else:
-                            # si ya no hay IPs, quita la ruta
-                            rutas.remove(ruta_bloqueadas)
-
-                    # Guarda cambios
-                    user_config.json_data = data
-                    user_config.save()
-                
-                
-                    # Reconstruye y recarga Caddy
-                    ok, msg = construir_configuracion_global()
-                    if ok:
-                        messages.success(request, f"IP {ip_del} desbloqueada correctamente. {msg}")
-                    else:
-                        messages.error(request, f"IP {ip_del} desbloqueada pero error recargando Caddy: {msg}")
-                return redirect("ips_bloqueadas")
-
-
     except UserJSON.DoesNotExist:
         messages.error(request, "No se encontró configuración para este usuario.")
-    except Exception as e:
-        messages.error(request, f"Error interno al cargar IPs: {e}")
+        return redirect("home")
+        
+        
+    rutas = (data.setdefault("apps", {})
+                .setdefault("http", {})
+                .setdefault("servers", {})
+                .setdefault("Cloud_Guardian", {})
+                .setdefault("routes", []))
 
-    # Renderiza la plantilla con las listas actuales
-    return render(request, "ips_bloqueadas.html", {
-        "allow_ips": allow,
-        "deny_ips": deny
-    })
+    security = (data["apps"]["http"]
+                    .setdefault("security", {})
+                    .setdefault("remote_ip", {}))
 
+    allow = security.setdefault("allow", [])
+    deny  = security.setdefault("deny",  [])
+    
+    
+    # Ruta que ya filtra por remote_ip (si existe)
+    ruta_ip = next(
+        (r for r in rutas
+            if "remote_ip" in r.get("match", [{}])[0]
+            and f"/{request.user.username}/" in r["match"][0]["path"][0]),
+        None
+    )
+    if ruta_ip:
+        deny[:] = ruta_ip["match"][0]["remote_ip"].get("ranges", [])
+        
+        
+
+    # ------------------------------------------------------------------ POST
+    if request.method == "POST":
+        accion = request.POST.get("action")
+        ip_add = request.POST.get("ip_add", "").strip()
+        ip_del = request.POST.get("ip_delete", "").strip()
+        
+        
+        def ip_valida(ip: str) -> bool:
+            try:
+                ipaddress.ip_network(ip)
+                return True
+            except ValueError:
+                return False
+
+        # ---------------------------- ADD
+        if accion == "add":
+            if not ip_add:
+                messages.warning(request, "Debes introducir la IP a bloquear.")
+            elif not ip_valida(ip_add):
+                messages.error(request, f"«{ip_add}» no es una IP/CIDR válida.")
+            elif ip_add in deny:
+                messages.info(request, f"La IP {ip_add} ya estaba bloqueada.")
+            else:
+                deny.append(ip_add)
+
+
+        # ---------------------------- DELETE
+        if accion == "delete":
+            if not ip_del:
+                messages.warning(request, "Debes introducir la IP a desbloquear.")
+            elif ip_del not in deny:
+                messages.warning(request, f"La IP {ip_del} no estaba bloqueada.")
+            else:
+                deny.remove(ip_del)
+
+        # Si el usuario hizo add o delete se persiste y se reconstruye
+        if accion in {"add", "delete"}:
+            # Reescribe/borra la ruta de filtrado
+            if deny:
+                nueva = {
+                    "match": [{
+                        "path": [f"/{request.user.username}/*"],
+                        "remote_ip": {"ranges": deny}
+                    }],
+                    "handle": [{
+                        "handler": "static_response",
+                        "status_code": 403,
+                        "body": "IP bloqueada"
+                    }]
+                }
+                if ruta_ip:
+                    rutas[rutas.index(ruta_ip)] = nueva
+                else:
+                    rutas.insert(0, nueva)
+            else:
+                if ruta_ip:
+                    rutas.remove(ruta_ip)
+
+            # Guarda en BD y lanza recarga
+            user_config.json_data = data
+            user_config.save()
+
+            ok, msg = construir_configuracion_global()
+            (messages.success if ok else messages.error)(
+                request,
+                f"Operación completada. {msg}" if ok
+                else f"Operación guardada, pero {msg}"
+            )
+            return redirect("ips_bloqueadas")
+
+    
+    # ---------------------------------------------------------------- render
+    return render(
+        request,
+        "ips_bloqueadas.html",
+        {"allow_ips": allow, "deny_ips": deny}
+    )
+    
+    
 
 """  RUTAS PROTEGIDAS  """
 @login_required
