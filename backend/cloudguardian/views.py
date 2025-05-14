@@ -44,6 +44,15 @@ JSON_PATH = os.path.join(BASE_DIR, "deploy", "caddy.json") # Eso construye la ru
 # Función mejorada para construir el caddy global y recargar Caddy automáticamente
 def construir_configuracion_global():
     
+    """
+    Genera un único caddy.json con:
+        1. /static/* servido en disco
+        2. Todas las rutas de todos los usuarios
+            (¡filtrando remote_ip vacíos!)
+        3. Catch-all → Gunicorn en 127.0.0.1:8000
+    Después intenta recargar Caddy por la API.
+    """
+    
     # Primero creamos el json de base
     base = {
         "admin": {"listen": "0.0.0.0:2019"},
@@ -72,14 +81,23 @@ def construir_configuracion_global():
             {
                 "handler": "file_server",
                 # pon aquí la ruta absoluta donde está tu carpeta static en el servidor:
-                "root": "/home/despliegue-nube/cloudguardian/backend/static"
+                "root": "/home/despliegue-nube/cloudguardian/backend/staticfiles"
             }
         ]
     })
     
     # 2) Rutas de usuario... Aqui vamos a recorrer todos los .json de los usuario uniendolos al base para tener un .json con todas las configuraciones
     for ujson in UserJSON.objects.all():
-        rutas_globales.extend(ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"])
+        rutas_usuario = ujson.json_data["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
+
+        for r in rutas_usuario:
+            m = r.get("match", [{}])[0]
+            if "remote_ip" in m and not m["remote_ip"].get("ranges"):
+                # ⛔ saltamos /nube/* con "ranges": []
+                continue
+            rutas_globales.append(r)
+        
+        
     # 3) Catch-all a Django
     rutas_globales.append({
         "handle": [
