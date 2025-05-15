@@ -10,12 +10,17 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
-from pathlib import Path
+from pathlib import Path # Recomendado para manejar rutas
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+# Directorio donde se guardará el caddy.json generado
+# Esto creará la ruta /home/despliegue-nube/cloudguardian/backend/deploy/
+# Asegúrate de que esta ruta existe y Django tiene permisos de escritura
+DEPLOY_DIR = BASE_DIR / "deploy"
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -124,6 +129,10 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]  # 👉 carpeta static
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')    # opcional para producción
 
+# URL de la API de administración de Caddy
+# Asegúrate de que Django pueda alcanzar esta URL (ej. si Caddy está en un contenedor llamado 'caddy')
+CADDY_ADMIN_URL = os.environ.get("CADDY_ADMIN_URL", "http://127.0.0.1:2019") # Usa env var o fija aquí
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -138,3 +147,4 @@ REST_FRAMEWORK = {
 }
 
 LOGIN_URL = '/login/'
+

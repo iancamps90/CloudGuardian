@@ -1,17 +1,14 @@
 {
     "admin": {
-        "listen": "0.0.0.0:2019",
-        "origins": [
-                    "167.235.155.72:2019",
-                    "0.0.0.0:2019"
-]
+        "listen": "0.0.0.0:2019"
     },
     "apps": {
         "http": {
             "servers": {
                 "Cloud_Guardian": {
                     "listen": [
-                        ":80"
+                        ":80",
+                        ":443"
                     ],
                     "routes": [
                         {
@@ -25,7 +22,7 @@
                             "handle": [
                                 {
                                     "handler": "file_server",
-                                    "root": "/home/despliegue-nube/cloudguardian/backend/staticfiles"
+                                    "root": "C:\\Users\\USUARIO\\Desktop\\fct\\FIREWALL\\cloudguardian-deploy\\backend\\staticfiles"
                                 }
                             ]
                         },
@@ -67,8 +64,8 @@
                                     ],
                                     "remote_ip": {
                                         "ranges": [
-                                            "222.222.222.22"
-                                            
+                                            "222.222.222.22",
+                                            "111.111.111.11"
                                         ]
                                     }
                                 }
@@ -77,7 +74,7 @@
                                 {
                                     "handler": "static_response",
                                     "status_code": 403,
-                                    "body": "IP bloqueada"
+                                    "body": "IP bloqueada por Cloud Guardian"
                                 }
                             ]
                         },
@@ -100,19 +97,14 @@
                             "match": [
                                 {
                                     "path": [
-
-                                        "/ian1990/PIZZA"
-
+                                        "/ian1990/estudio"
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-
-                                    "body": "Acceso permitido a /ian1990/ddd",
-
-                                    "body": "Acceso permitido a /ian1990/PIZZA"
+                                    "body": "Acceso permitido a /ian1990/estudio"
                                 }
                             ]
                         },
@@ -135,20 +127,14 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/nube/*",
-                                        "/ian19902/*"
-                                    ],
-                                    "remote_ip": {
-                                        "ranges": [
-                                        ]
-                                    }
+                                        "/ian1990/ddd"
+                                    ]
                                 }
                             ],
                             "handle": [
                                 {
                                     "handler": "static_response",
-                                    "status_code": 403,
-                                    "body": "IP bloqueada"
+                                    "body": "Acceso permitido a /ian1990/ddd (Gestionado por Cloud Guardian)"
                                 }
                             ]
                         },
