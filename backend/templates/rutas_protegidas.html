@@ -9,10 +9,10 @@
     {% csrf_token %}
 
     <!-- Añadir ruta -->
-    <input type="text" name="ruta_add" placeholder="Nueva ruta a proteger"
-           class="w-full p-2 mb-2 rounded bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white">
+    <input type="text" name="ruta_add"  value="/{{ user.username }}/" placeholder="Nueva ruta a proteger"
+        class="w-full p-2 mb-2 rounded bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white">
     <button type="submit" name="action" value="add"
-            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded mb-4 transition">
+        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded mb-4 transition">
         Añadir Ruta
     </button>
 

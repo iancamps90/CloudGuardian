@@ -78,12 +78,43 @@
         <!-- SIDEBAR -->
         <aside class="w-64 bg-gray-100 dark:bg-gray-900 p-4 hidden md:block">
             <nav class="space-y-2 text-sm">
-                <a href="{% url 'home' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">Inicio</a>
-                <a href="{% url 'configuracion' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/configuracion/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">Configuración</a>
-                <a href="{% url 'ips_bloqueadas' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/ips-bloqueadas/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">IPs Bloqueadas</a>
-                <a href="{% url 'rutas_protegidas' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/rutas-protegidas/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">Rutas Protegidas</a>
+                <a href="{% url 'home' %}"
+                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
+                        {% if request.path == '/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
+                    Inicio
+                </a>
+
+                <a href="{% url 'configuracion' %}"
+                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
+                        {% if request.path == '/configuracion/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
+                    Configuración
+                </a>
+
+                <a href="{% url 'ips_bloqueadas' %}"
+                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
+                        {% if request.path == '/ips-bloqueadas/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
+                    IPs bloqueadas
+                </a>
+
+                <a href="{% url 'rutas_protegidas' %}"
+                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
+                        {% if request.path == '/rutas-protegidas/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
+                Rutas protegidas
+                </a>
+                
+                
+                <a href="{% url 'destinos_externos' %}"
+                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
+                        {% if request.path == '/destinos/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
+                Destinos externos
+                </a>
+
                 {% if es_superuser %}
-                <a href="{% url 'eliminar_usuario' %}" class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 {% if request.path == '/usuarios/eliminar/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">Gestionar usuarios</a>
+                <a href="{% url 'eliminar_usuario' %}"
+                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
+                        {% if request.path == '/admin/eliminar-usuario/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
+                    Gestionar usuarios
+                </a>
                 {% endif %}
             </nav>
         </aside>

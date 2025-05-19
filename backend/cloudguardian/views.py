@@ -1,9 +1,12 @@
-import datetime
+
+from __future__ import annotations
+
+# ── estándar ───────────────────────────────────────────────────
 import ipaddress
 import os
 import json
 import requests
-import shutil
+from typing import Dict, List, Tuple, Any 
 import logging # Importamos el módulo de logging para rastrear eventos y errores
 
 """ DJANGO IMPORTS """
@@ -16,6 +19,7 @@ from django.contrib.admin.views.decorators import staff_member_required # Decora
 # from django.utils.decorators import method_decorator # (No usado en vistas basadas en función aquí)
 from django.contrib import messages # Sistema de mensajes de Django
 from django.views.decorators.csrf import csrf_exempt # (Usado si deshabilitas CSRF, úsalo con precaución)
+from django.utils.text import slugify
 
 
 from django.conf import settings # Importamos settings para configuraciones específicas del entorno
@@ -35,32 +39,25 @@ from django.conf import settings # Importamos settings para configuraciones espe
 """ MODELOS Y SERIALIZERS IMPORTS """
 # Importamos tus modelos y serializadores personalizados
 from .models import UserJSON # Modelo para almacenar el JSON de configuración de cada usuario
-# from .serializers import UserRegisterSerializer # (No usado directamente en estas vistas clásicas)
+# from .serializers import UserRegisterSerializer # 
+
+
 
 # --- Configuración del Logger ---
-# Obtiene una instancia del logger para este módulo.
-# Configura el manejo de logging en tu settings.py para ver estos mensajes (crucial en servidor)
+# Configura el manejo de logging en tu settings.py para ver estos mensajes 
 logger = logging.getLogger(__name__)
 
 """ 🔵🔵🔵 CONFIGURACIÓN Y FUNCIONES DE CADDY 🔵🔵🔵 """
 # BASE_DIR ya está definido en settings.py y apunta a la raíz de tu proyecto backend.
 # BASE_DIR = settings.BASE_DIR # (Redundante, ya está en settings)
 
-# --- Rutas de Archivos y URLs de Servicio (Configurar en settings.py para el servidor) ---
 
 # Directorio donde se guardará el caddy.json generado dinámicamente por Django.
-# Caddy NO lee automáticamente este archivo por defecto cuando usas la API /load,
-# pero tenerlo guardado es útil para depuración y para iniciar Caddy inicialmente
-# si no quieres usar la API desde el principio.
-# Debe ser una ruta ABSOLUTA en el sistema de archivos del SERVIDOR
-# donde se ejecuta tu aplicación Django, y Django debe tener permisos de ESCRITURA allí.
-# Ejemplo en settings.py: DEPLOY_DIR = '/home/despliegue-nube/cloudguardian/backend/deploy'
-# Asegúrate de que esta ruta exista y sea correcta en tu despliegue.
-DEPLOY_DIR = getattr(settings, 'DEPLOY_DIR') # Se espera que DEPLOY_DIR esté definido en settings
+DEPLOY_DIR: str = settings.DEPLOY_DIR # Se espera que DEPLOY_DIR esté definido en settings
 
 # Ruta completa al archivo caddy.json que se genera.
 # Se construye a partir del DEPLOY_DIR configurado en settings.
-JSON_PATH = os.path.join(DEPLOY_DIR, "caddy.json")
+JSON_PATH: str = os.path.join(DEPLOY_DIR, "caddy.json")
 
 
 # URL de la API de administración de Caddy. Django enviará peticiones POST a esta URL
@@ -72,7 +69,13 @@ JSON_PATH = os.path.join(DEPLOY_DIR, "caddy.json")
 # En tu despliegue, la variable de entorno CADDY_ADMIN_URL debería estar definida
 # como 'http://nombre_servicio_caddy:2019' (si usas Docker/Kubernetes) o
 # 'http://ip_interna_del_servidor_caddy:2019' (si están en la misma red interna).
-CADDY_ADMIN_URL = getattr(settings, 'CADDY_ADMIN_URL', 'http://localhost:2019')
+CADDY_URL:   str = getattr(settings, "CADDY_ADMIN_URL", "http://167.235.155.72:2019")
+
+
+STATIC_ROOT: str = settings.STATIC_ROOT  # ruta a collectstatic
+
+
+SERVIDOR_CADDY    = "Cloud_Guardian"
 
 
 # --- Funciones de Ayuda ---
@@ -88,209 +91,186 @@ def _ip_valida(cadena: str) -> bool:
     except ValueError:
         # Si ipaddress lanza un ValueError, la cadena no es un formato IP/CIDR válido.
         return False
+    
 
-def construir_configuracion_global():
+def construir_configuracion_global()-> Tuple[bool, str]:
     """
     Construye la configuración completa de Caddy en formato JSON.
     Consolida:
-    1. La configuración base del servidor Caddy (puertos de escucha, API admin).
-    2. Una ruta para servir archivos estáticos directamente desde el disco.
-    3. Las rutas de configuración personalizadas de CADA usuario obtenidas de UserJSON.
-    (Se filtran rutas de IP bloqueada con IPs inválidas).
-    4. Una ruta "catch-all" final que envía todo el tráfico no coincidente a Gunicorn (Django).
-    Finalmente, intenta enviar esta configuración a la API de administración de Caddy para recargarla.
+    1) /static/* → file_server
+    2) rutas de todos los usuarios (filtrando IPs/CIDR inválidos)
+    3) catch-all → :8000
+
+    Devuelve (ok, mensaje).
     """
-    logger.info("Iniciando construcción de la configuración global de Caddy para recarga.")
 
     # --- 1. Configuración Base de Caddy ---
-    # Define la estructura fundamental de la configuración JSON de Caddy.
-    base_config = {
-        # Configuración de la API de administración de Caddy.
-        # Caddy debe estar iniciado y escuchando en este puerto para que Django pueda recargarlo.
-        "admin": {"listen": "0.0.0.0:2019"}, # Escucha en todas las interfaces en el puerto 2019.
+    cfg: Dict = {
+        "admin": {"listen": "0.0.0.0:2019"},
         "apps": {
             "http": {
                 "servers": {
-                    # Define el servidor HTTP/S principal que maneja las peticiones entrantes.
-                    "Cloud_Guardian": {
-                        # Puertos en los que Caddy escuchará las peticiones web entrantes.
-                        # Caddy gestiona automáticamente HTTPS con Let's Encrypt si el dominio es público.
-                        "listen": [":80", ":443"],
-                        # Lista donde se añadirán las rutas de Caddy (estáticos, usuarios, Django).
-                        "routes": []
-                    }
+                    SERVIDOR_CADDY: {"listen": [":80", ":443"], "routes": []}
                 }
             }
-        }
+        },
     }
-
-    # Obtenemos la referencia a la lista de rutas globales para añadirles elementos fácilmente.
-    rutas_globales = base_config["apps"]["http"]["servers"]["Cloud_Guardian"]["routes"]
-
+    routes: List [Dict[str, Any]] = cfg["apps"]["http"]["servers"][SERVIDOR_CADDY]["routes"]
+    
     # --- 2. Ruta para Servir Archivos Estáticos (/static/*) ---
     # Configura Caddy para servir archivos estáticos directamente desde el sistema de archivos.
     # Esto es mucho más eficiente que servirlos a través de Django/Gunicorn.
     # settings.STATIC_ROOT debe ser la ruta ABSOLUTA en el SERVIDOR donde 'collectstatic' copia los archivos.
     # Caddy debe tener permisos de LECTURA en esta ruta.
-    static_root_path = getattr(settings, 'STATIC_ROOT', None)
-    if static_root_path and os.path.exists(static_root_path):
-        rutas_globales.append({
-            "match": [
-                { "path": ["/static/*"] } # Coincide con cualquier petición que empiece por /static/
-            ],
-            "handle": [
-                {
-                    "handler": "file_server", # El handler que sirve archivos desde el disco
-                    "root": static_root_path # El directorio raíz donde buscar los archivos estáticos
-                }
-            ]
-        })
-        logger.debug(f"Añadida ruta estática para servir desde {static_root_path}")
+    
+    if STATIC_ROOT and os.path.exists(STATIC_ROOT):
+        routes.append(
+            {
+                "match": [{"path": ["/static/*"]}],
+                "handle": [{"handler": "file_server", "root": STATIC_ROOT}],
+            }
+        )
     else:
-        # Log de advertencia si STATIC_ROOT no está configurado o la ruta no existe en el servidor.
-        logger.warning(f"settings.STATIC_ROOT '{static_root_path}' no configurado o no existe en el servidor. La ruta estática para Caddy no se añadirá.")
+        logger.warning("STATIC_ROOT no existe; se omite file_server.")
+
 
 
     # --- 3. Rutas de Usuario (Obtenidas de la Base de Datos) ---
-    # Itera sobre la configuración JSON de Caddy guardada para cada usuario en la base de datos.
-    # Consolida todas estas rutas individuales en la configuración global.
+    # Itera sobre la configuración JSON de Caddy guardada para cada usuario en la base de datos (en el modelo UserJSON).
+    # Consolida todas estas rutas individuales en la configuración global de Caddy, filtrando entradas inválidas.
     try:
-        # Recupera todas las configuraciones de usuario de la base de datos.
         all_user_configs = UserJSON.objects.all()
         logger.debug(f"Procesando configuraciones de {len(all_user_configs)} usuarios desde la base de datos.")
 
-        # Itera sobre cada configuración de usuario.
-        for ujson in all_user_configs:
-            # ************ PUNTO CLAVE PARA EL NAMERROR ************
-            # Asegúrate de que en esta línea y en cualquier otro lugar dentro de este bucle
-            # donde accedas a los datos JSON del usuario, uses SIEMPRE:
-            # -> ujson.json_data
-            # y NUNCA una variable llamada simplemente `ujson_data`.
-            # Tu código actual ya usa `ujson.json_data`, así que el typo debe estar en la versión desplegada.
-            # Usamos .get con defaults para acceder de forma segura a la lista de rutas del usuario,
-            # evitando KeyErrors si el JSON de algún usuario no tiene la estructura esperada.
-            user_routes = ujson.json_data.get("apps", {}).get("http", {}).get("servers", {}).get("Cloud_Guardian", {}).get("routes", [])
-            logger.debug(f"Procesando rutas para usuario '{ujson.user.username}': {len(user_routes)} rutas encontradas en su JSON.")
+        # Itera sobre cada configuración de usuario recuperada.
+        for user_json_obj in all_user_configs: # Usamos un nombre de variable claro (user_json_obj)
+            # Accede a los datos JSON DEPURADOS y VALIDADOS guardados en el campo json_data del modelo UserJSON.
+            # Utilizamos .get con diccionarios vacíos como default para evitar KeyErrors si la estructura no es perfecta.
+            user_data: Dict[str, Any] = user_json_obj.json_data if user_json_obj.json_data is not None else {} # Aseguramos que es un dict
+            user_routes_list: List[Dict[str, Any]] = (
+                user_data
+                    .get("apps", {})
+                    .get("http", {})
+                    .get("servers", {})
+                    .get(SERVIDOR_CADDY, {})   # ← mismo par de llaves aquí
+                    .get("routes", [])
+            )
+
+
+            logger.debug(f"Procesando rutas para usuario '{user_json_obj.user.username}': {len(user_routes_list)} rutas encontradas en su JSON.")
 
             # Itera sobre cada ruta definida en la configuración de este usuario.
-            for ruta in user_routes:
+            for ruta in user_routes_list:
                 # Validación básica de la estructura de la ruta antes de añadirla a la configuración global.
-                # Esto ayuda a prevenir que JSONs de usuario mal formados rompan la configuración global de Caddy.
-                matcher = ruta.get("match", [{}])[0] # Asume que hay al menos un matcher y coge el primero.
-                paths = matcher.get("path", []) # Obtiene la lista de paths del matcher.
+                # Esto es CRUCIAL para prevenir que JSONs de usuario mal formados o maliciosos rompan la configuración global de Caddy.
+                if not isinstance(ruta, dict) or "match" not in ruta or "handle" not in ruta:
+                    logger.warning(f"[{user_json_obj.user.username}] Descartando ruta mal formada: {ruta}")
+                    continue # Pasa a la siguiente ruta del usuario.
+
+                # Validar el matcher: debe ser una lista no vacía con diccionarios dentro.
+                matchers = ruta.get("match", [])
+                if not isinstance(matchers, list) or not matchers or not isinstance(matchers[0], dict):
+                    logger.warning(f"[{user_json_obj.user.username}] Descartando ruta con matcher inválido: {ruta}")
+                    continue
+
+                first_matcher = matchers[0] # Cogemos el primer matcher para validaciones específicas
 
                 # Lógica específica para rutas con `remote_ip` (usada para bloqueo de IPs).
                 # Filtra rangos de IP inválidos dentro de estos matchers.
-                if "remote_ip" in matcher:
-                    # Crea una lista de rangos de IP que son válidos.
-                    valid_ranges = [r for r in matcher["remote_ip"].get("ranges", []) if _ip_valida(r)]
+                if "remote_ip" in first_matcher:
+                    remote_ip_matcher = first_matcher.get("remote_ip", {})
+                    ranges_list = remote_ip_matcher.get("ranges", [])
+                    # Validar que 'ranges' es una lista y que cada elemento es una IP/CIDR válido.
+                    if not isinstance(ranges_list, list):
+                        logger.warning(f"[{user_json_obj.user.username}] Descartando ruta con remote_ip: 'ranges' no es lista: {matchers}")
+                        continue
+
+                    # Filtra y valida cada IP/CIDR en la lista de rangos.
+                    valid_ranges = [rng for rng in ranges_list if _ip_valida(rng)] # Usamos la función de ayuda
+
                     if not valid_ranges:
                         # Si no quedan rangos IP válidos después del filtro, descarta esta ruta por completo.
-                        logger.warning(f"Descartando ruta con remote_ip para usuario '{ujson.user.username}' debido a rangos de IP inválidos o vacíos: {matcher}")
+                        logger.warning(f"[{user_json_obj.user.username}] Descartando ruta con remote_ip: rangos inválidos o vacíos: {matchers}")
                         continue # Pasa a la siguiente ruta del usuario.
-                    # Actualiza la lista de rangos IP en el matcher con solo los válidos.
-                    matcher["remote_ip"]["ranges"] = valid_ranges
 
-                # Validación adicional: asegurar que la ruta tiene al menos un path definido.
-                if not paths:
-                    logger.warning(f"Descartando ruta para usuario '{ujson.user.username}' sin path(s) definido(s): {ruta}")
+                    # Actualiza la lista de rangos IP en el matcher con solo los válidos.
+                    # Asegurar que el diccionario remote_ip existe antes de asignar la lista.
+                    if "remote_ip" not in first_matcher or not isinstance(first_matcher["remote_ip"], dict):
+                        first_matcher["remote_ip"] = {} # Si no existía o no era dict, lo creamos
+                    first_matcher["remote_ip"]["ranges"] = valid_ranges
+
+
+                # Validación adicional: asegurar que la ruta tiene al menos un path definido Y/O un remote_ip válido.
+                paths = first_matcher.get("path", [])
+                has_path_matcher = isinstance(paths, list) and paths # True si es lista y no vacía
+                has_remote_ip_matcher = "remote_ip" in first_matcher and isinstance(first_matcher["remote_ip"].get("ranges"), list) and first_matcher["remote_ip"]["ranges"] # True si tiene remote_ip válido y no vacío
+
+                # Si no tiene un matcher de path válido Y tampoco tiene un matcher de remote_ip válido, descartar.
+                if not has_path_matcher and not has_remote_ip_matcher:
+                    logger.warning(f"[{user_json_obj.user.username}] Descartando ruta sin matcher de path válido O remote_ip válido: {ruta}")
                     continue
 
-                # Si la ruta pasa las validaciones básicas, la añade a la lista de rutas globales.
-                rutas_globales.append(ruta)
-                logger.debug(f"Añadida ruta válida de usuario '{ujson.user.username}': {ruta}")
+
+                # Validar el handler: debe ser una lista no vacía con diccionarios dentro y tener una clave 'handler'.
+                handles = ruta.get("handle", [])
+                if not isinstance(handles, list) or not handles or not isinstance(handles[0], dict) or "handler" not in handles[0]:
+                    logger.warning(f"[{user_json_obj.user.username}] Descartando ruta con handler inválido: {ruta}")
+                    continue
+                # TODO (CRÍTICO): Añadir validación aquí para asegurar que el handler es UNO PERMITIDO para usuarios.
+                # Ej. solo permitir "static_response" o "reverse_proxy" a destinos internos CONTROLADOS.
+                # La validación actual solo verifica la estructura básica del handler.
+                # Permitir handlers como "exec" aquí sería un riesgo de seguridad ENORME.
+                # Dependiendo de la funcionalidad deseada para los usuarios, esta validación es clave.
+
+
+                # Si la ruta pasa todas las validaciones básicas de estructura y contenido, la añade a la lista de rutas globales.
+                routes.append(ruta) # Añade la ruta válida del usuario a la lista global de rutas
+                logger.debug(f"[{user_json_obj.user.username}] Añadida ruta válida de usuario: {ruta}")
 
     except Exception as e:
-        # Captura errores durante el procesamiento de las configuraciones de usuario.
-        # Esto evita que un usuario con un JSON corrupto detenga toda la aplicación.
-        logger.error(f"Error crítico al procesar configuraciones de usuario para la configuración global de Caddy: {e}", exc_info=True)
-        # Decide si quieres abortar la construcción de la configuración o continuar con una parcial.
-        # Continuar permite que al menos las rutas estáticas y la de Django funcionen.
-        messages.error(None, f"Error interno al procesar configuraciones de usuario para Caddy: {e}") # Mensaje global si es posible
+        # Captura CUALQUIER error inesperado durante el procesamiento de TODAS las configuraciones de usuario.
+        # Esto es un catch-all para proteger la construcción global si algo falla al iterar, acceder a datos de un usuario, etc.
+        logger.error(f"Error CRÍTICO inesperado al procesar TODAS las configuraciones de usuario para la construcción global de Caddy: {e}", exc_info=True)
+        # En producción, si esto falla, las rutas de usuario no se cargarán, pero las rutas estáticas y Django SÍ.
+        # Un mensaje global puede ser útil, pero solo si no interfiere con los mensajes de las vistas.
+        # messages.error(None, f"Error interno crítico al procesar configuraciones de usuario para Caddy: {e}. La configuración puede estar incompleta.")
 
-    # --- 4. Ruta "Catch-all" para Gunicorn (Django) ---
-    # Esta ruta maneja todas las peticiones que no coincidieron con ninguna ruta anterior (estáticos, rutas de usuario).
-    # Asume que tu servidor Gunicorn (o el servidor de desarrollo de Django en local) está escuchando en el puerto 8000.
-    # Caddy enviará estas peticiones a Gunicorn.
-    # Asegúrate de que el puerto 8000 es ACCESIBLE por Caddy (ej. si están en contenedores, deben estar en la misma red).
-    rutas_globales.append({
-        "handle": [
-            {
-                "handler": "reverse_proxy", # Handler para reenviar peticiones a otro servidor
-                "upstreams": [
-                    # La dirección del servidor backend (Gunicorn/Django).
-                    # 'localhost:8000' funciona si Gunicorn escucha en 127.0.0.1 *desde el punto de vista de Caddy*.
-                    # Si están en contenedores separados, usa el nombre del servicio: 'nombre_servicio_django:8000'.
-                    { "dial": ":8000" }
-                ]
-            }
-        ]
-    })
+
+    # --- 4. Ruta "Catch-all" para Gunicorn (Django)
+    routes.append(
+        {
+            "handle": [
+                {
+                    "handler": "reverse_proxy", # Handler para reenviar peticiones
+                    "upstreams": [
+                        # La dirección del servidor backend (Gunicorn/Django).
+                        # Usamos 127.0.0.1 para loopback si Caddy y Gunicorn están en la misma máquina.
+                        { "dial": ":8000" } 
+                    ]
+                }
+            ]
+        }
+    )
     logger.debug("Añadido catch-all a :8000 (Gunicorn/Django).")
 
-    # --- Guardar la Configuración Global en un Archivo (.json) ---
-    # Opcional para la recarga por API, pero útil para inspección y debugging en el servidor.
-    # Django necesita permisos de escritura en settings.DEPLOY_DIR.
+
+    # ── guardar fichero — opcional pero útil ─────────────────
+    os.makedirs(DEPLOY_DIR, exist_ok=True)
+    with open(JSON_PATH, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, indent=4)
+    logger.debug("📝 Guardado %s", JSON_PATH)
+
+    # ── recargar Caddy ───────────────────────────────────────
     try:
-        # Intenta crear el directorio DEPLOY_DIR si no existe.
-        os.makedirs(DEPLOY_DIR, exist_ok=True)
-        # Escribe la configuración JSON completa en el archivo.
-        with open(JSON_PATH, "w", encoding="utf-8") as f:
-            json.dump(base_config, f, indent=4) # Usa base_config que es el diccionario completo
-        logger.info(f"Configuración global de Caddy escrita correctamente en {JSON_PATH}")
-    except Exception as e:
-        # Captura errores al escribir el archivo (ej. permisos, espacio en disco).
-        logger.error(f"Error al escribir el archivo de configuración Caddy en {JSON_PATH}: {e}", exc_info=True)
-        # La recarga por API sigue siendo el método principal, así que no abortamos aquí.
-        # Pero notificamos que el archivo no se guardó.
-        file_write_error_msg = f" (Error al guardar archivo: {e})"
-
-
-    # --- Recargar Caddy a través de su API de Administración ---
-    # Este es el paso CRUCIAL para que Caddy aplique los cambios dinámicamente.
-    # Django necesita poder conectarse a la URL definida en CADDY_ADMIN_URL.
-    try:
-        logger.info(f"Intentando recargar Caddy usando la API: {CADDY_ADMIN_URL}/load")
-        # Envía la configuración JSON completa (base_config) a la API /load de Caddy.
-        resp = requests.post(
-            CADDY_ADMIN_URL + "/load",
-            json=base_config, # Envía el diccionario Python, requests lo serializará a JSON
-            headers={'Content-Type': 'application/json'}, # Indica al servidor que enviamos JSON
-            timeout=10 # Aumenta el tiempo de espera para la respuesta (en segundos), útil en red.
-        )
-        # Registra la respuesta de Caddy. Esto es VITAL para depurar fallos en la recarga.
-        logger.info(f"Respuesta de Caddy API: Status {resp.status_code}, Body: {resp.text}")
-
-        # Verifica si Caddy respondió con éxito (código 200).
-        if resp.status_code == 200:
-            logger.info("Recarga de Caddy exitosa.")
-            # Devuelve éxito y un mensaje, incluyendo si hubo error al guardar el archivo.
-            return True, "Configuración global generada y Caddy recargado correctamente." + file_write_error_msg
-        else:
-            # Si Caddy devuelve un código de error (ej. 400 por JSON inválido), lo registramos y devolvemos el error.
-            logger.error(f"Fallo al recargar Caddy (status {resp.status_code}): {resp.text}")
-            return False, f"Error al recargar Caddy: {resp.status_code} – {resp.text}" + file_write_error_msg
-
-    # --- Manejo de Errores de Conexión/Petición ---
-    # Captura diferentes tipos de errores que pueden ocurrir al intentar contactar la API de Caddy.
-    # Estos errores son comunes en entornos de red o si Caddy no está corriendo/API no accesible.
-    except requests.exceptions.ConnectionError as e:
-        # Error si no se puede establecer conexión con la URL de la API de Caddy.
-        logger.error(f"Error de conexión al intentar recargar Caddy en {CADDY_ADMIN_URL}: {e}", exc_info=True)
-        return False, f"No se pudo conectar con Caddy Admin API en {CADDY_ADMIN_URL}: {e}. ¿Está Caddy corriendo y el puerto {CADDY_ADMIN_URL.split(':')[-1]} accesible desde Django?" + file_write_error_msg
-    except requests.exceptions.Timeout as e:
-        # Error si la petición a la API de Caddy excede el tiempo de espera.
-        logger.error(f"Timeout al intentar recargar Caddy en {CADDY_ADMIN_URL}: {e}", exc_info=True)
-        return False, f"Timeout al conectar con Caddy Admin API en {CADDY_ADMIN_URL}: {e}. La API no respondió a tiempo." + file_write_error_msg
-    except requests.exceptions.RequestException as e:
-        # Captura otros errores generales de la librería requests.
-        logger.error(f"Otro error de Request al intentar recargar Caddy: {e}", exc_info=True)
-        return False, f"Error desconocido al recargar Caddy: {e}" + file_write_error_msg
-    except Exception as e:
-        # Captura cualquier otro error inesperado durante el proceso de recarga de Caddy.
-        logger.error(f"Error inesperado durante la recarga de Caddy: {e}", exc_info=True)
-        return False, f"Error inesperado durante la recarga de Caddy: {e}" + file_write_error_msg
-
+        resp = requests.post(f"{CADDY_URL}/load", json=cfg, timeout=10)
+        if resp.ok:
+            logger.info("✅ Caddy recargado.")
+            return True, "Caddy recargado correctamente."
+        logger.error("❌ Caddy devolvió %s – %s", resp.status_code, resp.text)
+        return False, f"Error {resp.status_code}: {resp.text}"
+    except requests.exceptions.RequestException as exc:
+        logger.error("❌ No se pudo contactar con Caddy: %s", exc)
+        return False, f"No se pudo contactar con Caddy: {exc}"
 
 """ 🔵 VISTAS CLÁSICAS PARA TEMPLATES 🔵 """
 
@@ -1260,7 +1240,128 @@ def rutas_protegidas(request):
     
     
     
+
+@login_required
+def destinos_externos(request):
+    """
+    Permite a cada usuario mapear un alias propio (p. ej. /usuario/google)
+    a una URL/IP externa (reverse-proxy).
+    """
+    user_cfg, _ = UserJSON.objects.get_or_create(user=request.user)
+    data = user_cfg.json_data
+
+    # puntero a la lista de rutas de este user
+    rutas =(data.setdefault("apps", {})
+                .setdefault("http", {})
+                .setdefault("servers", {})
+                .setdefault("Cloud_Guardian", {})
+                .setdefault("routes", []))
+
+    # ---- carga de alias existentes ---------------------------------
+    destinos: list[dict] = []       # lo que consume el template
     
+    for r in rutas:
+        
+        # match debe ser lista; tomamos el primero
+        matchers = r.get("match", [])
+        if not matchers:
+            continue
+        
+        m = matchers[0]                        # dict
+        path_list = m.get("path", [])
+        if not path_list:
+            continue
+
+        path_0 = path_list[0]                 # '/usuario/alias/*'
+        if not path_0.startswith(f"/{request.user.username}/"):
+            continue
+
+        # handler tiene que ser lista-de-dicts y ser reverse_proxy
+        handle_list = r.get("handle", [])
+        if (not handle_list or
+            handle_list[0].get("handler") != "reverse_proxy"):
+            continue
+
+        upstreams = handle_list[0].get("upstreams", [])
+        if not upstreams or "dial" not in upstreams[0]:
+            continue
+
+        alias = path_0.split("/", 2)[2]                       
+        dial  = upstreams[0]["dial"]       # ej. google.com:443
+        host, _, puerto = dial.partition(":")              # “host”, “:”, “443”
+        url_mostrada = ("https://" if puerto == "443" else "http://") + host
+
+        destinos.append(
+            {"alias": alias, "host": host, "puerto": puerto, "url": url_mostrada}
+        )
+
+    # ---- POST ------------------------------------------------------
+    if request.method == "POST":
+        action = request.POST.get("action")
+
+        if action == "add":
+            alias = request.POST.get("alias", "").strip()
+            url   = request.POST.get("url",   "").strip()
+
+            if not alias or not url:
+                messages.warning(request, "Alias y URL son obligatorios.")
+                return redirect("destinos_externos")
+
+            # normaliza URL → dial  (google.com → google.com:443 , http:// → :80)
+            if url.startswith("http://"):
+                dial = url.removeprefix("http://").rstrip("/") + ":80"
+            elif url.startswith("https://"):
+                dial = url.removeprefix("https://").rstrip("/") + ":443"
+            else:                                     # sin esquema → asumimos https
+                dial = url.rstrip("/") + ":443"
+                url  = "https://" + url.lstrip("/")
+
+            # si ya existía, reemplazamos; si no, añadimos
+            nuevo = {
+                "match": [{"path": [f"/{request.user.username}/{alias}/*"]}],
+                "handle": [{
+                    "handler": "reverse_proxy",
+                    "upstreams": [{"dial": dial}],
+                    # para HTTPS remoto
+                    "transport": {"protocol": "http", "tls": {}}
+                }]
+            }
+
+            # elimina posible ruta anterior con el mismo alias
+            rutas[:] = [
+                r for r in rutas 
+                if not (r.get("match", [{}])[0]
+                        .get("path", [""])[0]
+                    .startswith(f"/{request.user.username}/{alias}"))
+            ]
+            rutas.insert(0, nuevo)      
+            msg_ok = f"Alias «{alias}» → {url} guardado."
+
+        elif action == "delete":
+            alias = request.POST.get("alias_del", "")
+            rutas[:] = [
+                r for r in rutas 
+                if not (r.get("match", [{}])[0]
+                        .get("path", [""])[0]
+                    .startswith(f"/{request.user.username}/{alias}"))]
+            msg_ok = f"Alias «{alias}» eliminado."
+
+        else:
+            messages.error(request, "Acción no reconocida.")
+            return redirect("destinos_externos")
+
+        # ---- guardamos y recargamos Caddy --------------------------
+        user_cfg.json_data = data
+        user_cfg.save()
+        ok, msg = construir_configuracion_global()
+        (messages.success if ok else messages.error)(request, f"{msg_ok} {msg}")
+        return redirect("destinos_externos")
+
+    # ---- GET -------------------------------------------------------
+    return render(request, "destinos.html",
+                {"destinos": destinos, "user": request.user})
+
+
 
 # """ 🔴 API ORIGINAL (Deshabilitada) 🔴 """
     # Esta sección contiene la implementación original de varias APIs basadas en Django REST Framework.

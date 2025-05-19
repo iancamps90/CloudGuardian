@@ -60,12 +60,34 @@
                             "match": [
                                 {
                                     "path": [
+                                        "/ian1990/nike/*"
+                                    ]
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [
+                                        {
+                                            "dial": "www.nike.com:443"
+                                        }
+                                    ],
+                                    "transport": {
+                                        "protocol": "http",
+                                        "tls": {}
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "match": [
+                                {
+                                    "path": [
                                         "/ian1990/*"
                                     ],
                                     "remote_ip": {
                                         "ranges": [
-                                            "222.222.222.22",
-                                            "111.111.111.11"
+                                            "123.123.123.12"
                                         ]
                                     }
                                 }
@@ -82,59 +104,22 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/ian1990/practicas"
+                                        "/ian1990/google/*"
                                     ]
                                 }
                             ],
                             "handle": [
                                 {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/practicas"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/estudio"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/estudio"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/cccc"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/cccc"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/ddd"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/ddd (Gestionado por Cloud Guardian)"
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [
+                                        {
+                                            "dial": "www.google.com/?hl=es:443"
+                                        }
+                                    ],
+                                    "transport": {
+                                        "protocol": "http",
+                                        "tls": {}
+                                    }
                                 }
                             ]
                         },
