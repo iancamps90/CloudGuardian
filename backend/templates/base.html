@@ -9,12 +9,23 @@
 
     <link rel="icon" type="image/png" href="{% static 'favicon.ico' %}">
 
+    {# Script para detección de tema: Previene FOUT (Flash of Unstyled Content) #}
     <script>
-        // Detecta el modo guardado en localStorage
+        // Este script se ejecuta ANTES de que el DOM esté completamente cargado.
+        // Aplica o remueve la clase 'dark' al <html> para evitar un "flash" de tema incorrecto.
         if (localStorage.getItem('theme') === 'light') {
             document.documentElement.classList.remove('dark');
-        } else {
+        } else if (localStorage.getItem('theme') === 'dark') {
             document.documentElement.classList.add('dark');
+        } else {
+            // Si no hay tema guardado, detecta la preferencia del sistema
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            }
         }
     </script>
     
@@ -26,139 +37,186 @@
             theme: {
                 extend: {
                     animation: {
-                        'slide-in': 'slide-in 0.4s ease-out',
-                        'fade': 'fade 0.3s ease-in-out'
+                        'slide-in-right': 'slide-in-right 0.4s ease-out forwards', // 'forwards' mantiene el estado final
+                        'fade-in': 'fade-in 0.3s ease-in-out forwards',
+                        'pulse-once': 'pulse 0.7s ease-out 1', // Animación de un solo pulso
+                        'spin-slow': 'spin 3s linear infinite', // Spin más lento para iconos
                     },
                     keyframes: {
-                        'slide-in': {
+                        'slide-in-right': {
                             '0%': { transform: 'translateX(100%)', opacity: '0' },
                             '100%': { transform: 'translateX(0)', opacity: '1' },
                         },
-                        'fade': {
+                        'fade-in': {
                             '0%': { opacity: '0' },
                             '100%': { opacity: '1' },
                         },
+                        // Keyframes para el pulso (ya existen en Tailwind, pero se redefinen si necesitas personalización)
+                        pulse: {
+                            '0%, 100%': { opacity: 1 },
+                            '50%': { opacity: .5 },
+                        }
                     }
                 }
             }
         }
     </script>
-</head>
-<body class="transition-colors duration-500 min-h-screen flex flex-col bg-white text-black dark:bg-gray-950 dark:text-white">
 
-    <!-- HEADER -->
-    <header class="bg-gray-100 dark:bg-gray-900 p-4 shadow flex justify-between items-center">
-        <h1 class="text-xl font-semibold tracking-tight">
-            🛡️ CloudGuardian
+    {# Font Awesome para iconos vectoriales, un toque más profesional que emojis #}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+</head>
+
+<body class="transition-colors duration-300 min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 font-sans antialiased">
+
+    <header class="bg-white dark:bg-gray-900 p-4 shadow-md flex justify-between items-center border-b border-gray-200 dark:border-gray-800 z-10">
+        <h1 class="text-2xl font-bold tracking-tight flex items-center text-blue-600 dark:text-blue-400">
+            <i class="fa-solid fa-shield-halved mr-2 text-3xl"></i> CloudGuardian
         </h1>
 
-        <div class="flex gap-4 items-center">
-            <!-- Toggle modo claro/oscuro -->
-            <button onclick="toggleTheme()" class="bg-gray-200 dark:bg-gray-700 dark:text-white text-black hover:bg-gray-300 dark:hover:bg-gray-600 px-2 py-1 rounded text-sm">
-                🌙/☀️
+        <div class="flex items-center gap-4">
+            {# Nombre de usuario si está autenticado #}
+            {% if user.is_authenticated %}
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300 hidden sm:inline">
+                    Hola, <span class="font-semibold">{{ user.username }}</span>
+                </span>
+            {% endif %}
+
+            <button onclick="toggleTheme()" 
+                    class="p-2 rounded-full text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 
+                            focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 transition-all group">
+                <i class="fa-solid fa-moon text-lg group-hover:animate-pulse-once dark:hidden"></i>
+                <i class="fa-solid fa-sun text-lg group-hover:animate-pulse-once hidden dark:inline-block"></i>
+                <span class="sr-only">Toggle theme</span> {# Para accesibilidad #}
             </button>
 
-        {% if user.is_authenticated %}
-        <form method="POST" action="{% url 'logout' %}">
-            {% csrf_token %}
-            <button class="bg-red-600 hover:bg-red-700 focus:ring-2 focus:ring-red-300 transition-all px-4 py-1 rounded text-sm shadow">
-                Cerrar sesión
-            </button>
-        </form>
-        {% else %}
-        <a href="{% url 'login' %}" class="bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 transition-all px-4 py-1 rounded text-sm shadow">
-            Iniciar sesión
-        </a>
-        {% endif %}
+            {% if user.is_authenticated %}
+            {# Botón de Cerrar Sesión con icono y hover state #}
+            <form method="POST" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button type="submit" 
+                        class="bg-red-600 hover:bg-red-700 focus:ring-2 focus:ring-red-300 transition-all 
+                                px-4 py-2 rounded-md text-sm font-medium text-white shadow-sm flex items-center">
+                    <i class="fa-solid fa-right-from-bracket mr-2"></i> Cerrar sesión
+                </button>
+            </form>
+            {% else %}
+            {# Botón de Iniciar Sesión con icono #}
+            <a href="{% url 'login' %}" 
+                class="bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-300 transition-all 
+                        px-4 py-2 rounded-md text-sm font-medium text-white shadow-sm flex items-center">
+                <i class="fa-solid fa-right-to-bracket mr-2"></i> Iniciar sesión
+            </a>
+            {% endif %}
         </div>
     </header>
 
     <div class="flex flex-grow">
 
-        <!-- SIDEBAR -->
-        <aside class="w-64 bg-gray-100 dark:bg-gray-900 p-4 hidden md:block">
+        <aside id="sidebar" class="w-64 bg-white dark:bg-gray-900 p-4 border-r border-gray-200 dark:border-gray-800 
+                                    transition-all duration-300 ease-in-out md:block 
+                                    fixed inset-y-0 left-0 z-40 transform -translate-x-full md:relative md:translate-x-0">
             <nav class="space-y-2 text-sm">
+                {# Enlaces con iconos, estados activos más claros y transiciones #}
                 <a href="{% url 'home' %}"
-                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
-                        {% if request.path == '/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
-                    Inicio
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/' or request.path == '/home/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-house mr-3 text-lg"></i> Inicio
                 </a>
 
+                {% if request.user.is_authenticated %}
                 <a href="{% url 'configuracion' %}"
-                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
-                        {% if request.path == '/configuracion/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
-                    Configuración
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/configuracion/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-gear mr-3 text-lg"></i> Configuración
                 </a>
+                {% endif %}
 
                 <a href="{% url 'ips_bloqueadas' %}"
-                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
-                        {% if request.path == '/ips-bloqueadas/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
-                    IPs bloqueadas
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/ips-bloqueadas/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-ban mr-3 text-lg"></i> IPs Bloqueadas
                 </a>
 
                 <a href="{% url 'rutas_protegidas' %}"
-                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
-                        {% if request.path == '/rutas-protegidas/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
-                Rutas protegidas
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/rutas-protegidas/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-lock mr-3 text-lg"></i> Rutas Protegidas
                 </a>
-                
                 
                 <a href="{% url 'destinos_externos' %}"
-                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
-                        {% if request.path == '/destinos/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
-                Destinos externos
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/destinos-externos/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-globe mr-3 text-lg"></i> Destinos Externos
                 </a>
 
-                {% if es_superuser %}
+                <a href="{% url 'dominios_proxy_view' %}"
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/dominios-proxy/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-link mr-3 text-lg"></i> Dominios Proxy
+                </a>
+
+                {% if user.is_superuser %}
+                <hr class="border-t border-gray-200 dark:border-gray-700 my-4"> {# Separador #}
+                <a href="{% url 'register' %}"
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/register/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-user-plus mr-3 text-lg"></i> Crear Usuario
+                </a>
                 <a href="{% url 'eliminar_usuario' %}"
-                    class="block p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700
-                        {% if request.path == '/admin/eliminar-usuario/' %}bg-gray-300 dark:bg-gray-800 font-bold{% endif %}">
-                    Gestionar usuarios
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/admin/eliminar-usuario/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-users-gear mr-3 text-lg"></i> Gestionar Usuarios
                 </a>
                 {% endif %}
             </nav>
         </aside>
 
-        
-        <!-- MENSAJES FLOTANTES -->
+        {# Overlay para Sidebar en móvil #}
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden" onclick="toggleSidebar()"></div>
+
         {% if messages %}
-        <div id="messages" class="fixed top-4 right-4 z-50 space-y-2">
+        <div id="messages" class="fixed top-4 right-4 z-50 space-y-3">
             {% for message in messages %}
-            <div class="alert px-3 py-2 text-sm rounded-md shadow-md text-white max-w-xs break-words animate-slide-in
+            <div class="alert px-4 py-3 text-sm rounded-lg shadow-xl text-white max-w-xs break-words animate-slide-in-right flex items-center gap-2
                 {% if message.tags == 'success' %}bg-green-600{% elif message.tags == 'error' %}bg-red-600{% elif message.tags == 'warning' %}bg-yellow-500 text-black{% else %}bg-gray-700{% endif %}">
-                {{ message }}
+                {% if message.tags == 'success' %}<i class="fa-solid fa-circle-check text-base"></i>
+                {% elif message.tags == 'error' %}<i class="fa-solid fa-circle-xmark text-base"></i>
+                {% elif message.tags == 'warning' %}<i class="fa-solid fa-triangle-exclamation text-base"></i>
+                {% else %}<i class="fa-solid fa-info-circle text-base"></i>{% endif %}
+                <span>{{ message }}</span>
             </div>
             {% endfor %}
         </div>
         {% endif %}
 
-
-        <!-- CONTENIDO PRINCIPAL -->
-        <main class="flex-grow p-6 py-8">
+        <main class="flex-grow p-6 py-8 md:ml-0 transition-all duration-300 ease-in-out">
+            {# Botón para abrir sidebar en móvil #}
+            <button id="sidebar-toggle" class="md:hidden fixed top-4 left-4 z-50 p-3 rounded-full bg-blue-600 text-white shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <i class="fa-solid fa-bars text-lg"></i>
+            </button>
             {% block content %}
             {% endblock %}
         </main>
     </div>
 
-    <!-- FOOTER -->
-    <footer class="bg-gray-100 dark:bg-gray-900 p-2 text-center text-xs text-gray-500 dark:text-gray-400">
-        © 2025 CloudGuardian · Todos los derechos reservados
+    <footer class="bg-white dark:bg-gray-900 p-3 text-center text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-800">
+        © 2025 CloudGuardian. Todos los derechos reservados.
+        <a href="#" class="text-blue-500 hover:underline ml-1">Política de Privacidad</a>
     </footer>
 
-
+    {# JavaScript para la lógica de la interfaz #}
     <script>
-        // Oculta los mensajes automáticamente tras 3 segundos
+        // Oculta los mensajes automáticamente tras 4 segundos y añade animación de salida
         setTimeout(() => {
-            const alerts = document.querySelectorAll('#messages .alert');
-            alerts.forEach(alert => {
-                alert.classList.add('opacity-0', 'transition-opacity', 'duration-500');
-                setTimeout(() => alert.remove(), 500);  // Espera a que se desvanezca
-            });
-        }, 3000);
-    </script>
-    
+            const messagesContainer = document.getElementById('messages');
+            if (messagesContainer) {
+                messagesContainer.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+                messagesContainer.addEventListener('transitionend', () => messagesContainer.remove());
+            }
+        }, 4000); // Aumentado a 4 segundos para mejor lectura
 
-    <script>
+        // Lógica para el modo claro/oscuro
         function toggleTheme() {
             const root = document.documentElement;
             const isDark = root.classList.contains('dark');
@@ -170,8 +228,40 @@
                 localStorage.setItem('theme', 'dark');
             }
         }
-    </script>
 
-    
+        // Lógica para el sidebar en dispositivos móviles
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const mainContent = document.querySelector('main');
+
+        function toggleSidebar() {
+            if (sidebar.classList.contains('-translate-x-full')) {
+                // Abrir sidebar
+                sidebar.classList.remove('-translate-x-full');
+                sidebarOverlay.classList.remove('hidden');
+                // Ajustar margin-left del contenido principal (opcional, para visualización en desktop al "abrir" en móvil)
+                // mainContent.classList.add('md:ml-64'); 
+            } else {
+                // Cerrar sidebar
+                sidebar.classList.add('-translate-x-full');
+                sidebarOverlay.classList.add('hidden');
+                // mainContent.classList.remove('md:ml-64');
+            }
+        }
+
+        // Event listener para el botón de toggle en móvil
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', toggleSidebar);
+        }
+
+        // Cierra el sidebar si se redimensiona a desktop mientras está abierto en móvil
+        window.addEventListener('resize', () => {
+            if (window.innerWidth >= 768) { // md breakpoint de Tailwind
+                sidebar.classList.remove('-translate-x-full');
+                sidebarOverlay.classList.add('hidden');
+            }
+        });
+    </script>
 </body>
 </html>

@@ -17,10 +17,53 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Directorio donde se guardará el caddy.json generado
-# Esto creará la ruta /home/despliegue-nube/cloudguardian/backend/deploy/
-# Asegúrate de que esta ruta existe y Django tiene permisos de escritura
-DEPLOY_DIR = BASE_DIR / "deploy"
+# --- MOVE THESE LINES HERE ---
+# Ensure log directory exists
+LOG_DIR = BASE_DIR / 'logs'
+os.makedirs(LOG_DIR, exist_ok=True) # This will create the directory if it doesn't exist
+# --- END MOVE ---
+
+# Identificador del servidor Caddy que usas en tu configuración JSON
+# Ej: "Cloud_Guardian", "mi_proxy_principal"
+SERVIDOR_CADDY = "Cloud_Guardian"
+
+# Puertos en los que Caddy escuchará el tráfico HTTP y HTTPS
+# Por defecto, son los puertos estándar 80 y 443.
+CADDY_HTTP_PORT = 80
+CADDY_HTTPS_PORT = 443
+
+
+SERVER_PUBLIC_IP = "167.235.155.72"
+
+
+# URL de la API de administración de Caddy.
+# ¡CRÍTICO para producción!
+# Debe ser la dirección y puerto INTERNO de Caddy accesible por Django.
+# NUNCA expongas esto directamente a Internet.
+# Ejemplo: 'http://caddy-service-name:2019' si usas Docker Compose
+# o 'http://127.0.0.1:2019' si Caddy y Django están en el mismo servidor (y Caddy escucha en 127.0.0.1)
+# o la IP privada de tu VM de Caddy.
+CADDY_ADMIN_URL = os.environ.get("CADDY_ADMIN_URL", "http://127.0.0.1:2019") # Valor por defecto solo para desarrollo/pruebas.
+
+# Directorio donde Django puede escribir el caddy.json.
+# En producción, esto debería ser un directorio persistente y con permisos adecuados.
+# Ej: /var/lib/cloudguardian/caddy_configs/
+DEPLOY_DIR = os.environ.get("DEPLOY_CONFIG_DIR", BASE_DIR / 'caddy_configs')
+# Si usas Path, asegúrate de que sea Path(os.environ.get(...))
+if not isinstance(DEPLOY_DIR, Path): # Convertir a Path si es una cadena
+    DEPLOY_DIR = Path(DEPLOY_DIR)
+
+
+# Ruta completa al archivo caddy.json
+JSON_PATH = DEPLOY_DIR / "caddy.json"
+
+# Target de Django para el proxy inverso en Caddy.
+# Esto es a donde Caddy enviará el tráfico a tu aplicación Django.
+# Para producción: 'unix:/path/to/gunicorn.sock' o 'tu_app_django:8000' (en Docker)
+# Para desarrollo: ':8000'
+DJANGO_APP_DIAL = os.environ.get("DJANGO_APP_DIAL", ":8000")
+
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -33,6 +76,63 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]  # para desarrollo
 
+
+# --- Configuración de Logging ---
+# Es muy importante tener un buen logging en producción.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {asctime} {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'file': { # Now it should work because LOG_DIR exists
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_DIR / 'django.log', # Use LOG_DIR here
+            'maxBytes': 1024*1024*5,
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'caddy_file': { # Now it should work because LOG_DIR exists
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_DIR / 'caddy_interactions.log', # Use LOG_DIR here
+            'maxBytes': 1024*1024*5,
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file'], # Re-enable 'file'
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'cloudguardian': {
+            'handlers': ['console', 'file', 'caddy_file'], # Re-enable 'file' and 'caddy_file'
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'requests': {
+            'handlers': ['caddy_file'], # Re-enable 'caddy_file'
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
 
 # Application definition
 
@@ -126,12 +226,12 @@ USE_TZ = True
 
 #  STATIC FILES CONFIGURACIÓN
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]  # 👉 carpeta static
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')    # opcional para producción
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]  #  carpeta static
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')    
 
 # URL de la API de administración de Caddy
 # Asegúrate de que Django pueda alcanzar esta URL (ej. si Caddy está en un contenedor llamado 'caddy')
-CADDY_ADMIN_URL = os.environ.get("CADDY_ADMIN_URL", "http://127.0.0.1:2019") # Usa env var o fija aquí
+
 
 
 # Default primary key field type

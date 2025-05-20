@@ -1,39 +1,215 @@
 {% extends "base.html" %}
-{% block title %}Panel de control{% endblock %}
-{% block content %}
-<div class="max-w-6xl mx-auto px-4 py-8">
 
-    <h1 class="text-3xl font-extrabold mb-4 text-gray-900 dark:text-white">
-        Bienvenido, {{ user.username }} 👋
+{% block title %}Panel de control - CloudGuardian{% endblock %} {# Título más descriptivo #}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8 animate-fade-in"> {# Mayor ancho y animación #}
+
+    {# Encabezado de bienvenida con un enfoque más dinámico #}
+    <h1 class="text-5xl font-extrabold mb-6 text-gray-900 dark:text-white leading-tight flex items-center">
+        <i class="fa-solid fa-cloud-bolt text-blue-500 mr-4"></i> Bienvenido, 
+        <span class="text-blue-600 dark:text-blue-400 ml-2 animate-pulse-once">{{ user.username }}</span>!
     </h1>
 
-    <p class="text-gray-600 dark:text-gray-400 mb-8">
-        Este es tu panel de control de CloudGuardian.
+    <p class="text-xl text-gray-600 dark:text-gray-400 mb-12">
+        Tu centro de comando para una seguridad web robusta y gestión de tráfico con **CloudGuardian**.
     </p>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    {# Grid responsiva para las tarjetas de funcionalidad #}
+    {# Se adapta de 1 columna a 2 en 'sm', 3 en 'lg' y 4 en 'xl', con más espacio entre ellas #}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"> {# Aumento del gap #}
 
-        <a href="{% url 'configuracion' %}" class="block rounded-lg p-5 transition shadow-lg bg-white text-black dark:bg-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-            <h2 class="text-xl font-semibold mb-2">⚙️ Configuración</h2>
-            <p>Edita tu archivo <code>caddy.json</code> de forma segura.</p>
+        {# Tarjeta: IP del Servidor (Nueva) - Diseño más prominente #}
+        {% if server_ip %}
+        <div class="relative rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
+                    bg-gradient-to-br from-indigo-600 to-purple-700 text-white 
+                    border border-indigo-500 dark:border-purple-800 
+                    flex flex-col justify-between overflow-hidden group">
+            <div class="absolute top-0 right-0 -mt-4 -mr-4 bg-white/10 dark:bg-black/10 rounded-full w-24 h-24 blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
+                <i class="fa-solid fa-network-wired mr-3 text-3xl"></i> IP del Servidor
+            </h2>
+            <p class="text-sm opacity-90 mb-6 z-10">
+                Esta es la dirección IP pública actual de tu servidor CloudGuardian. Asegúrate de que tus dominios apunten aquí.
+            </p>
+            <p class="mt-auto text-4xl font-extrabold text-white tracking-wide break-all z-10">
+                {{ server_ip }}
+            </p>
+            <span class="absolute bottom-4 left-4 text-white/30 text-8xl opacity-20 -z-0">IP</span>
+        </div>
+        {% endif %}
+
+        {# Tarjeta: Configuración (Condicional para Superusuarios) - Estilo mejorado #}
+        {% if user.is_superuser %}
+        <a href="{% url 'configuracion' %}"
+            class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
+                bg-white dark:bg-gray-800 
+                text-gray-900 dark:text-white 
+                border border-gray-200 dark:border-gray-700 
+                flex flex-col justify-between group relative overflow-hidden">
+            <i class="fa-solid fa-gear absolute top-4 right-4 text-5xl text-gray-200 dark:text-gray-700 opacity-70 group-hover:rotate-45 transition-transform"></i>
+            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
+                <i class="fa-solid fa-sliders mr-3 text-3xl text-purple-600 dark:text-purple-400"></i> Configuración
+            </h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
+                Modifica directamente el JSON de configuración global de Caddy. Requiere precaución.
+            </p>
+            {# Puedes añadir un conteo si obtienes el tamaño del JSON o número de rutas base #}
+            {# <p class="mt-auto text-lg font-bold text-gray-500 dark:text-gray-300"> (X KB) </p> #}
+            <div class="mt-auto text-blue-600 dark:text-blue-400 font-semibold flex items-center">
+                Acceder <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+            </div>
+        </a>
+        {% endif %}
+
+        {# Tarjeta: IPs Bloqueadas con Conteo - Estilo visualmente más impactante #}
+        <a href="{% url 'ips_bloqueadas' %}"
+            class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
+                bg-white dark:bg-gray-800 
+                text-gray-900 dark:text-white 
+                border border-gray-200 dark:border-gray-700 
+                flex flex-col justify-between group relative overflow-hidden">
+            <i class="fa-solid fa-firewall absolute top-4 right-4 text-5xl text-gray-200 dark:text-gray-700 opacity-70 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
+                <i class="fa-solid fa-hand-fist mr-3 text-3xl text-red-600 dark:text-red-400"></i> IPs Bloqueadas
+            </h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
+                Gestiona y aplica reglas para denegar o permitir direcciones IP específicas.
+            </p>
+            <p class="mt-auto text-4xl font-extrabold text-red-600 dark:text-red-400 z-10">
+                {{ ip_block_count }} <span class="text-2xl font-semibold">bloqueadas</span>
+            </p>
         </a>
 
-        <a href="{% url 'ips_bloqueadas' %}" class="block rounded-lg p-5 transition shadow-lg bg-white text-black dark:bg-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-            <h2 class="text-xl font-semibold mb-2">🚫 IPs Bloqueadas</h2>
-            <p>Gestiona las IPs denegadas y permitidas.</p>
+        {# Tarjeta: Rutas Protegidas - Conteo si está disponible #}
+        <a href="{% url 'rutas_protegidas' %}"
+            class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
+                bg-white dark:bg-gray-800 
+                text-gray-900 dark:text-white 
+                border border-gray-200 dark:border-gray-700 
+                flex flex-col justify-between group relative overflow-hidden">
+            <i class="fa-solid fa-user-shield absolute top-4 right-4 text-5xl text-gray-200 dark:text-gray-700 opacity-70 group-hover:rotate-6 transition-transform"></i>
+            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
+                <i class="fa-solid fa-route mr-3 text-3xl text-orange-600 dark:text-orange-400"></i> Rutas Protegidas
+            </h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
+                Administra reglas de acceso y seguridad (ej. autenticación, IP whitelists) para rutas específicas de tu web.
+            </p>
+            {# Si tienes el conteo, añádelo aquí #}
+            {# <p class="mt-auto text-4xl font-extrabold text-orange-600 dark:text-orange-400 z-10">{{ ruta_protegida_count }} <span class="text-2xl font-semibold">reglas</span></p> #}
+            <div class="mt-auto text-blue-600 dark:text-blue-400 font-semibold flex items-center">
+                Gestionar <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+            </div>
         </a>
 
-        <a href="{% url 'rutas_protegidas' %}" class="block rounded-lg p-5 transition shadow-lg bg-white text-black dark:bg-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-            <h2 class="text-xl font-semibold mb-2">🔒 Rutas Protegidas</h2>
-            <p>Administra rutas dentro del firewall.</p>
+        {# Tarjeta: Destinos Externos con Conteo #}
+        <a href="{% url 'destinos_externos' %}"
+            class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
+                bg-white dark:bg-gray-800 
+                text-gray-900 dark:text-white 
+                border border-gray-200 dark:border-gray-700 
+                flex flex-col justify-between group relative overflow-hidden">
+            <i class="fa-solid fa-server absolute top-4 right-4 text-5xl text-gray-200 dark:text-gray-700 opacity-70 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
+                <i class="fa-solid fa-arrow-right-from-bracket mr-3 text-3xl text-teal-600 dark:text-teal-400"></i> Destinos Externos
+            </h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
+                Configura proxies inversos a hosts y servicios externos o internos de tu infraestructura.
+            </p>
+            <p class="mt-auto text-4xl font-extrabold text-teal-600 dark:text-teal-400 z-10">
+                {{ external_destination_count }} <span class="text-2xl font-semibold">destinos</span>
+            </p>
         </a>
 
-        <a href="{% url 'register' %}" class="block rounded-lg p-5 transition shadow-lg bg-white text-black dark:bg-gray-800 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-            <h2 class="text-xl font-semibold mb-2">👥 Registro</h2>
-            <p>Crea nuevos usuarios en el sistema.</p>
+        {# Tarjeta: Dominios Proxy con Conteo #}
+        <a href="{% url 'dominios_proxy_view' %}" 
+            class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
+                bg-white dark:bg-gray-800 
+                text-gray-900 dark:text-white 
+                border border-gray-200 dark:border-gray-700 
+                flex flex-col justify-between group relative overflow-hidden">
+            <i class="fa-solid fa-sitemap absolute top-4 right-4 text-5xl text-gray-200 dark:text-gray-700 opacity-70 group-hover:rotate-12 transition-transform"></i>
+            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
+                <i class="fa-solid fa-earth-americas mr-3 text-3xl text-green-600 dark:text-green-400"></i> Dominios Proxy
+            </h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
+                Redirige y gestiona dominios completos para servir contenido desde otros servidores.
+            </p>
+            <p class="mt-auto text-4xl font-extrabold text-green-600 dark:text-green-400 z-10">
+                {{ domain_proxy_count }} <span class="text-2xl font-semibold">dominios</span>
+            </p>
         </a>
         
+        {# Tarjeta: Gestionar Usuarios (Solo para superusuarios) #}
+        {% if user.is_superuser %}
+        <a href="{% url 'eliminar_usuario' %}"
+            class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
+                bg-white dark:bg-gray-800 
+                text-gray-900 dark:text-white 
+                border border-gray-200 dark:border-gray-700 
+                flex flex-col justify-between group relative overflow-hidden">
+            <i class="fa-solid fa-users-gear absolute top-4 right-4 text-5xl text-gray-200 dark:text-gray-700 opacity-70 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
+                <i class="fa-solid fa-user-cog mr-3 text-3xl text-indigo-600 dark:text-indigo-400"></i> Gestionar Usuarios
+            </h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
+                Administra los usuarios que tienen acceso a este panel de CloudGuardian.
+            </p>
+            <div class="mt-auto text-blue-600 dark:text-blue-400 font-semibold flex items-center">
+                Administrar <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+            </div>
+        </a>
+
+        {# Tarjeta: Crear Usuario (Solo para superusuarios) #}
+        <a href="{% url 'register' %}"
+            class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
+                bg-white dark:bg-gray-800 
+                text-gray-900 dark:text-white 
+                border border-gray-200 dark:border-gray-700 
+                flex flex-col justify-between group relative overflow-hidden">
+            <i class="fa-solid fa-user-plus absolute top-4 right-4 text-5xl text-gray-200 dark:text-gray-700 opacity-70 group-hover:rotate-6 transition-transform"></i>
+            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
+                <i class="fa-solid fa-user-lock mr-3 text-3xl text-pink-600 dark:text-pink-400"></i> Crear Usuario
+            </h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
+                Permite la creación de nuevas cuentas para acceder al sistema.
+            </p>
+            <div class="mt-auto text-blue-600 dark:text-blue-400 font-semibold flex items-center">
+                Crear <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+            </div>
+        </a>
+        {% endif %}
+
+    </div> {# Fin del grid #}
+</div> {# Fin del contenedor principal #}
+
+{# Modal de bienvenida/tour al primer inicio de sesión (Opcional, para un toque extra) #}
+{% if show_welcome_modal %}
+<div id="welcome-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 animate-fade-in">
+    <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-2xl max-w-lg w-full text-center relative animate-zoom-in">
+        <button onclick="document.getElementById('welcome-modal').remove()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+        <h2 class="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-4">¡Bienvenido a CloudGuardian!</h2>
+        <p class="text-gray-700 dark:text-gray-300 mb-6">
+            Nos alegra tenerte a bordo. Aquí puedes gestionar la seguridad y el tráfico de tu servidor de forma sencilla e intuitiva.
+            Explora las diferentes secciones y toma el control.
+        </p>
+        <button onclick="document.getElementById('welcome-modal').remove()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all">
+            Empezar
+        </button>
     </div>
 </div>
-{% endblock %}
+<script>
+    // Pequeña animación para el modal
+    tailwind.config.theme.extend.animation['zoom-in'] = 'zoom-in 0.3s ease-out forwards';
+    tailwind.config.theme.extend.keyframes['zoom-in'] = {
+        '0%': { transform: 'scale(0.8)', opacity: '0' },
+        '100%': { transform: 'scale(1)', opacity: '1' },
+    };
+    // Implementar show_welcome_modal en tu vista si quieres mostrar un modal la primera vez que un usuario inicia sesión
+    
+</script>
+{% endif %}
 
+{% endblock %}

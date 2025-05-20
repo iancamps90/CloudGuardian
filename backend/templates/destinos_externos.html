@@ -1,0 +1,108 @@
+
+{% extends "base.html" %}
+
+{% block title %}Gestionar Destinos Externos{% endblock %} 
+
+{% block content %}
+
+<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 animate-fade"> 
+    <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700"> 
+
+        <h2 class="text-3xl font-extrabold mb-6 text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-link text-blue-500 mr-3"></i> Destinos Externos
+        </h2>
+
+        <p class="mb-8 text-lg text-gray-600 dark:text-gray-400">
+            Define alias para URLs o direcciones IP:puerto que uses frecuentemente como destinos para tus proxies o reenvíos.
+            Esto facilita su gestión y reusabilidad.
+        </p>
+
+        <h3 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-table text-green-500 mr-3"></i> Tus Destinos Actuales
+        </h3>
+        <div class="overflow-x-auto bg-gray-50 dark:bg-gray-700 rounded-lg shadow-inner border border-gray-200 dark:border-gray-600 mb-10"> 
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                <thead class="bg-gray-100 dark:bg-gray-700">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Alias</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Host/IP</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Puerto</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">URL Mostrada</th>
+                        <th scope="col" class="relative px-6 py-3">
+                            <span class="sr-only">Acciones</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {% for d in destinos %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-150 ease-in-out">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{{ d.alias }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{{ d.host }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                            {% if d.puerto %}{{ d.puerto }}{% else %}-{% endif %} 
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                            <a href="{{ d.url }}" target="_blank" rel="noopener noreferrer" class="font-mono">{{ d.url }}</a> 
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <form method="post" class="inline-block">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="alias_del" value="{{ d.alias }}">
+                                <button type="submit"
+                                        class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                                    <i class="fas fa-trash-alt mr-1"></i> Eliminar
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-info-circle text-2xl mb-2"></i>
+                            <p>No hay destinos externos configurados actualmente.</p>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h3 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-plus-square text-blue-500 mr-3"></i> Añadir Nuevo Destino
+        </h3>
+        <form method="post" class="space-y-6 bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner border border-gray-200 dark:border-gray-600">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add">
+
+            <div>
+                <label for="alias" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Alias (nombre corto)</label>
+                <div class="mt-1 relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-tag text-gray-400"></i> 
+                    </div>
+                    <input type="text" id="alias" name="alias" placeholder="ej. mi-servidor-web" required
+                            class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition duration-150 ease-in-out">
+                </div>
+            </div>
+
+            <div>
+                <label for="url_destino" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">URL de Destino (IP:Puerto o URL completa)</label>
+                <div class="mt-1 relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-globe text-gray-400"></i> 
+                    </div>
+                    <input type="text" id="url_destino" name="url" placeholder="ej. http://192.168.1.100:8080 o https://api.ejemplo.com" required
+                            class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition duration-150 ease-in-out">
+                </div>
+            </div>
+
+            <button type="submit"
+                    class="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-200 ease-in-out transform hover:-translate-y-0.5">
+                <i class="fas fa-save mr-2"></i> Guardar Nuevo Destino
+            </button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

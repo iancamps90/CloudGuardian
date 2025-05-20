@@ -1,41 +1,89 @@
 {% extends "base.html" %}
-{% block title %}Rutas Protegidas{% endblock %}
+
+{% block title %}Gestionar Rutas Protegidas{% endblock %} 
 
 {% block content %}
 
-<h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Rutas Protegidas</h2>
+<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 animate-fade"> 
+    <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700"> 
 
-<form method="POST">
-    {% csrf_token %}
+        <h2 class="text-3xl font-extrabold mb-6 text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-lock text-purple-500 mr-3"></i> Rutas Protegidas
+        </h2>
 
-    <!-- Añadir ruta -->
-    <input type="text" name="ruta_add"  value="/{{ user.username }}/" placeholder="Nueva ruta a proteger"
-        class="w-full p-2 mb-2 rounded bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white">
-    <button type="submit" name="action" value="add"
-        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded mb-4 transition">
-        Añadir Ruta
-    </button>
+        <p class="mb-8 text-lg text-gray-600 dark:text-gray-400">
+            Define las rutas de tu sitio que requieren autenticación adicional para ser accesibles.
+            Las rutas deben comenzar con una barra (ej. `/admin` o `/mi-secreto/`).
+        </p>
 
-    <!-- Eliminar ruta -->
-    <input type="text" name="ruta_delete" placeholder="Ruta a eliminar"
-        class="w-full p-2 mb-2 rounded bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white">
-    <button type="submit" name="action" value="delete"
-            class="bg-yellow-600 hover:bg-yellow-700 text-black dark:text-white px-4 py-2 rounded transition">
-        Eliminar Ruta
-    </button>
-</form>
+        <form method="POST" class="mb-10 space-y-6"> 
+            {% csrf_token %}
 
-<!-- Lista de rutas actuales -->
-<div class="mt-8">
-    <h3 class="text-lg font-semibold mb-2 text-blue-600 dark:text-blue-400">Rutas actuales protegidas:</h3>
-    <ul class="list-disc list-inside text-gray-800 dark:text-gray-200">
-        {% for ruta in rutas %}
-            <li>{{ ruta }}</li>
-        {% empty %}
-            <li>No hay rutas protegidas actualmente.</li>
-        {% endfor %}
-    </ul>
+            {# Sección para Añadir Ruta #}
+            <div class="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner border border-gray-200 dark:border-gray-600">
+                <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white flex items-center">
+                    <i class="fas fa-plus-circle text-green-500 mr-2"></i> Añadir Nueva Ruta Protegida
+                </h3>
+                <div>
+                    <label for="ruta_add" class="sr-only">Nueva ruta a proteger</label>
+                    <div class="mt-1 relative rounded-md shadow-sm">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-route text-gray-400"></i> 
+                        </div>
+                        <input type="text" id="ruta_add" name="ruta_add" value="/{{ user.username }}/" placeholder="ej. /mi-directorio-protegido/"
+                                class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 sm:text-sm transition duration-150 ease-in-out" required>
+                    </div>
+                </div>
+                <button type="submit" name="action" value="add"
+                        class="mt-4 inline-flex items-center px-5 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-200 ease-in-out transform hover:-translate-y-0.5">
+                    <i class="fas fa-plus mr-2"></i> Proteger Ruta
+                </button>
+            </div>
+
+            {# Sección para Eliminar Ruta #}
+            <div class="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner border border-gray-200 dark:border-gray-600">
+                <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white flex items-center">
+                    <i class="fas fa-minus-circle text-yellow-500 mr-2"></i> Eliminar Ruta Protegida
+                </h3>
+                <div>
+                    <label for="ruta_delete" class="sr-only">Ruta a eliminar</label>
+                    <div class="mt-1 relative rounded-md shadow-sm">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-times-circle text-gray-400"></i> 
+                        </div>
+                        <input type="text" id="ruta_delete" name="ruta_delete" placeholder="ej. /mi-directorio-protegido/"
+                                class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm transition duration-150 ease-in-out">
+                    </div>
+                </div>
+                <button type="submit" name="action" value="delete"
+                        class="mt-4 inline-flex items-center px-5 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition duration-200 ease-in-out transform hover:-translate-y-0.5">
+                    <i class="fas fa-trash-alt mr-2"></i> Desproteger Ruta
+                </button>
+            </div>
+        </form>
+
+        <h3 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-list-alt text-blue-500 mr-3"></i> Listado de Rutas Protegidas
+        </h3>
+
+        <div class="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner border border-gray-200 dark:border-gray-600">
+            {% if rutas %}
+                <ul class="divide-y divide-gray-200 dark:divide-gray-600">
+                    {% for ruta in rutas %}
+                        <li class="py-3 flex justify-between items-center text-lg text-gray-800 dark:text-gray-200">
+                            <span class="font-mono">{{ ruta }}</span>
+                            
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <i class="fas fa-info-circle text-3xl mb-3"></i>
+                    <p class="text-lg">No hay rutas protegidas configuradas actualmente.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
 </div>
 
 {% endblock %}
-
