@@ -7,8 +7,7 @@
             "servers": {
                 "Cloud_Guardian": {
                     "listen": [
-                        ":80",
-                        ":443"
+                        ":80"
                     ],
                     "routes": [
                         {
@@ -22,7 +21,7 @@
                             "handle": [
                                 {
                                     "handler": "file_server",
-                                    "root": "C:\\Users\\USUARIO\\Desktop\\fct\\FIREWALL\\cloudguardian-deploy\\backend\\staticfiles"
+                                    "root": "/home/despliegue-nube/cloudguardian/backend/staticfiles"
                                 }
                             ]
                         },
@@ -84,12 +83,7 @@
                                 {
                                     "path": [
                                         "/ian1990/*"
-                                    ],
-                                    "remote_ip": {
-                                        "ranges": [
-                                            "123.123.123.12"
-                                        ]
-                                    }
+                                    ]
                                 }
                             ],
                             "handle": [
@@ -113,9 +107,19 @@
                                     "handler": "reverse_proxy",
                                     "upstreams": [
                                         {
-                                            "dial": "www.google.com/?hl=es:443"
+                                            "dial": "www.google.com:80"
+                                            
                                         }
                                     ],
+                                    "headers": {
+                                        "request": {
+                                            "set": {
+                                                "Host": [
+                                                    "www.google.com"
+                                                ]
+                                            }
+                                        }
+                                    },
                                     "transport": {
                                         "protocol": "http",
                                         "tls": {}
@@ -143,12 +147,7 @@
                                 {
                                     "path": [
                                         "/nube/*"
-                                    ],
-                                    "remote_ip": {
-                                        "ranges": [
-                                            "111.222.333.44"
-                                        ]
-                                    }
+                                    ]
                                 }
                             ],
                             "handle": [
@@ -162,27 +161,38 @@
                         {
                             "match": [
                                 {
-                                    "path": [
-                                        "/nube/trabajo"
+                                    "host": [
+                                        "https://167.235.155.72/"
                                     ]
+                                    
                                 }
                             ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /nube/trabajo"
-                                }
-                            ]
-                        },
-                        {
                             "handle": [
                                 {
                                     "handler": "reverse_proxy",
                                     "upstreams": [
                                         {
-                                            "dial": ":8000"
+                                            "dial": "127.0.0.1:8000"
                                         }
-                                    ]
+                                    ],
+                                    "headers": {
+                                        "request": {
+                                            "set": {
+                                                "Host": [
+                                                    "{host}"
+                                                ],
+                                                "X-Real-IP": [
+                                                    "{remote_ip}"
+                                                ],
+                                                "X-Forwarded-For": [
+                                                    "{remote_ip}"
+                                                ],
+                                                "X-Forwarded-Proto": [
+                                                    "http"
+                                                ]
+                                            }
+                                        }
+                                    }
                                 }
                             ]
                         }
