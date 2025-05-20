@@ -21,7 +21,12 @@
                             "handle": [
                                 {
                                     "handler": "file_server",
-                                    "root": "/home/despliegue-nube/cloudguardian/backend/staticfiles"
+                                    "root": "/home/despliegue-nube/cloudguardian/backend/staticfiles",
+				    "hide": [
+                                       "Caddyfile",
+                                       "README.md"
+                                    ]
+
                                 }
                             ]
                         },
