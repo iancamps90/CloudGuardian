@@ -1,31 +1,64 @@
 {% extends "base.html" %}
-{% block title %}Eliminar usuario{% endblock %}
+
+{% block title %}Eliminar Usuario{% endblock %}
 
 {% block content %}
 
-<h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Eliminar usuario</h2>
+<div class="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 py-12 animate-fade"> 
+    <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700"> 
 
-<p class="mb-4 text-gray-600 dark:text-gray-400">
-    Introduce el nombre del usuario que deseas eliminar. <span class="font-semibold text-red-500">Esta acción es irreversible.</span>
-</p>
+        <h2 class="text-3xl font-extrabold mb-6 text-center text-red-600 dark:text-red-400 flex items-center justify-center">
+            <i class="fas fa-exclamation-triangle text-4xl mr-3"></i> Eliminar Usuario
+        </h2>
 
-<form method="POST" class="space-y-4">
-    {% csrf_token %}
-    <input type="text" name="username" placeholder="Nombre de usuario"
-        class="w-full p-2 rounded bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-red-400" required>
+        <div class="bg-red-50 dark:bg-red-900 border-l-4 border-red-500 dark:border-red-600 p-4 mb-8 rounded-md">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <i class="fas fa-skull-crossbones text-red-600 dark:text-red-400 text-xl"></i> 
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-red-800 dark:text-red-200 font-semibold">
+                        ¡Advertencia Crítica!
+                    </p>
+                    <p class="mt-1 text-sm text-red-700 dark:text-red-300">
+                        Estás a punto de eliminar un usuario permanentemente.
+                        <span class="font-bold">Esta acción es irreversible y resultará en la pérdida total de los datos del usuario.</span>
+                        Por favor, asegúrate de que es la acción correcta.
+                    </p>
+                </div>
+            </div>
+        </div>
 
-    <div class="flex items-center gap-4">
 
-        <button type="submit" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-white shadow focus:ring-2 focus:ring-red-400 transition">
-            Eliminar usuario
-        </button>
 
-        <a href="{% url 'home' %}" class="text-blue-500 dark:text-blue-400 hover:underline text-sm">
-            Cancelar
-        </a>
-        
+        <form method="POST" class="space-y-6"> 
+            {% csrf_token %}
+            <div>
+                <label for="username_delete" class="sr-only">Nombre de usuario a eliminar</label>
+                <div class="relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-user-slash text-gray-400"></i> 
+                    </div>
+                    <input type="text" id="username_delete" name="username" placeholder="Nombre de usuario a eliminar"
+                            class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 sm:text-sm transition duration-150 ease-in-out" required>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-4"> 
+
+                <button type="submit"
+                        class="w-full sm:w-auto flex-1 inline-flex justify-center py-2 px-6 border border-transparent rounded-md shadow-sm text-lg font-semibold text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition duration-200 ease-in-out transform hover:-translate-y-0.5">
+                    <i class="fas fa-trash-alt mr-2"></i> Eliminar Usuario
+                </button>
+
+                <a href="{% url 'home' %}"
+                    class="w-full sm:w-auto flex-1 inline-flex justify-center py-2 px-6 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-lg font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition duration-200 ease-in-out transform hover:-translate-y-0.5">
+                    <i class="fas fa-ban mr-2"></i> Cancelar
+                </a>
+            </div>
+        </form>
     </div>
-</form>
+</div>
 
 {% endblock %}
 

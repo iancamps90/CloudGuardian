@@ -127,21 +127,6 @@
                             "match": [
                                 {
                                     "path": [
-                                        "/ian1990/casa"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/casa (Gestionado por Cloud Guardian)"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
                                         "/nube/*"
                                     ],
                                     "remote_ip": {

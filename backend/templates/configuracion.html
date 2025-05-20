@@ -1,43 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Configuración{% endblock %}
+
+{% block title %}Configuración de Caddy{% endblock %} {# More specific title #}
 
 {% block content %}
 
-<h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">
-    {% if es_superuser %}
-        Configuración global (superusuario)
-    {% else %}
-        Configuración personal de acceso
-    {% endif %}
-</h2>
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"> {# Add a wrapper for consistent padding #}
+    <div class="bg-white dark:bg-gray-800 shadow-xl rounded-lg p-6 lg:p-8"> {# Card-like container #}
+        <h2 class="text-3xl font-extrabold mb-4 text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-cogs mr-3 text-blue-600 dark:text-blue-400"></i> {# Icon for settings #}
+            {% if es_superuser %}
+                Configuración Global de Caddy
+            {% else %}
+                Tu Configuración Personal de Caddy
+            {% endif %}
+        </h2>
 
-<p class="mb-4 text-gray-600 dark:text-gray-400">
-    {% if es_superuser %}
-        Estás visualizando y editando el <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">caddy.json</code> global, que contiene la configuración combinada de todos los usuarios.
-    {% else %}
-        Aquí puedes ver y editar tu configuración del <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">caddy.json</code> completo:
-    {% endif %}
-</p>
+        <p class="mb-6 text-lg text-gray-600 dark:text-gray-400">
+            {% if es_superuser %}
+                Estás visualizando y, como **superusuario**, puedes editar directamente el archivo <code class="bg-gray-200 dark:bg-gray-700 text-sm px-2 py-1 rounded-md font-mono text-blue-700 dark:text-blue-300">caddy.json</code> global. ¡Ten cuidado, los cambios afectan a todos los usuarios!
+            {% else %}
+                Aquí puedes ver tu configuración de Caddy. Los cambios se gestionan a través de las secciones específicas (Dominios Proxy, IPs Bloqueadas, etc.).
+            {% endif %}
+        </p>
 
-<form method="POST">
-    {% csrf_token %}
-    <textarea 
-        name="config" 
-        class="w-full h-96 p-4 rounded bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm font-mono text-gray-900 dark:text-green-300"
-        {% if not es_superuser %}readonly{% endif %}
-    >
-    {{ config }}
-    </textarea>
+        <form method="POST" class="space-y-6"> {# Add space-y for consistent margins #}
+            {% csrf_token %}
+            <label for="caddy-config" class="block text-sm font-medium text-gray-700 dark:text-gray-300 sr-only">Contenido de la configuración de Caddy</label> {# Added label for accessibility #}
+            <textarea
+                id="caddy-config" {# Added ID for label association #}
+                name="config"
+                class="w-full h-96 p-4 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm font-mono text-gray-900 dark:text-green-300 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                {% if not es_superuser %}readonly{% endif %}
+            >{{ config }}</textarea>
 
-    {# Muestra el botón de guardar SOLO si es superusuario #}
-    {% if es_superuser %}
-    <button type="submit" class="mt-4 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white shadow focus:ring-2 focus:ring-blue-400 transition">
-        Guardar cambios
-    </button>
-    {% else %}
-        <p class="mt-2 text-gray-600 dark:text-gray-400">Solo los superusuarios pueden editar la configuración directamente aquí. Usa las vistas específicas (Dominios, IPs bloqueadas, Destinos, etc.) para gestionar tus configuraciones.</p>
-    {% endif %}
-</form>
-
-
+            {# Muestra el botón de guardar SOLO si es superusuario #}
+            {% if es_superuser %}
+            <button type="submit" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 ease-in-out">
+                <i class="fas fa-save mr-2"></i> Guardar Cambios
+            </button>
+            {% else %}
+                <div class="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900 border-l-4 border-yellow-400 dark:border-yellow-600 text-yellow-800 dark:text-yellow-200 rounded-md">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-info-circle text-yellow-500 dark:text-yellow-400"></i>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm">
+                                Solo los superusuarios pueden editar esta configuración directamente. Por favor, utiliza las secciones específicas (Dominios Proxy, IPs Bloqueadas, etc.) para gestionar tus configuraciones de forma segura.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </form>
+    </div>
+</div>
 {% endblock %}

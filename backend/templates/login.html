@@ -1,26 +1,56 @@
 {% extends "base.html" %}
-{% block title %}Iniciar sesión{% endblock %}
+
+{% block title %}Iniciar Sesión en CloudGuardian{% endblock %} 
 
 {% block content %}
-<div class="flex items-center justify-center min-h-[80vh] animate-fade">
-    <form method="POST" class="bg-white dark:bg-gray-900 p-8 rounded-lg shadow-lg w-full max-w-md transition-colors">
-        {% csrf_token %}
-        <h2 class="text-2xl font-bold mb-6 text-center text-gray-800 dark:text-white">Iniciar sesión</h2>
 
-        <label class="block mb-2 text-gray-800 dark:text-gray-300">Usuario</label>
-        <input type="text" name="username" class="w-full p-2 mb-4 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-black dark:text-white" required>
+<div class="flex items-center justify-center min-h-[80vh] py-12 px-4 sm:px-6 lg:px-8 animate-fade">
 
-        <label class="block mb-2 text-gray-800 dark:text-gray-300">Contraseña</label>
-        <input type="password" name="password" class="w-full p-2 mb-6 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-black dark:text-white" required>
+    <div class="max-w-md w-full bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl transition-all duration-300 ease-in-out transform hover:scale-[1.01] border border-gray-200 dark:border-gray-700"> 
 
-        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded shadow focus:ring-2 focus:ring-blue-400 transition">
-            Entrar
-        </button>
+        {% csrf_token %} 
 
-        <a href="{% url 'register' %}" class="block mt-4 text-center text-blue-500 hover:underline">
-            Crear cuenta
-        </a>
-    </form>
+        <h2 class="text-3xl font-extrabold text-center mb-8 text-gray-900 dark:text-white">
+            <i class="fas fa-lock-open text-blue-500 mr-3"></i> Iniciar Sesión
+        </h2>
+
+
+        <form method="POST" class="space-y-6"> {# Usamos space-y para espaciado consistente #}
+            {% csrf_token %}
+            <div>
+                <label for="username_login" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre de Usuario</label>
+                <div class="mt-1 relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-user text-gray-400"></i>
+                    </div>
+                    <input type="text" name="username" id="username_login" autocomplete="username" required
+                            class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition duration-150 ease-in-out">
+                </div>
+            </div>
+
+            <div>
+                <label for="password_login" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Contraseña</label>
+                <div class="mt-1 relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-lock text-gray-400"></i>
+                    </div>
+                    <input type="password" name="password" id="password_login" autocomplete="current-password" required
+                            class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition duration-150 ease-in-out">
+                </div>
+            </div>
+
+            <button type="submit"
+                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-200 ease-in-out transform hover:-translate-y-0.5">
+                <i class="fas fa-sign-in-alt mr-2"></i> Entrar
+            </button>
+        </form>
+
+        <p class="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
+            ¿No tienes una cuenta?
+            <a href="{% url 'register' %}" class="font-medium text-green-600 hover:text-green-500 dark:text-green-400 dark:hover:text-green-300 transition-colors duration-200">
+                Crear cuenta
+            </a>
+        </p>
+    </div>
 </div>
 {% endblock %}
-

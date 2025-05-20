@@ -9,3 +9,17 @@ node_modules/
 venv/
 venv/
 backend/deploy/caddy.json.save
+
+
+# Ignorar archivos de Caddy generados
+/backend/deploy/caddy.json
+
+
+# Ignorar la carpeta donde collectstatic copia los archivos (¡siempre!)
+/backend/staticfiles/
+
+# Opcional: Ignorar el archivo .env si lo usas para configuración sensible
+# /backend/.env
+
+# Ignorar entornos virtuales
+/venv/

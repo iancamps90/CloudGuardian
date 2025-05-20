@@ -6,8 +6,10 @@ import ipaddress
 import os
 import json
 import requests
+import re  
 from typing import Dict, List, Tuple, Any 
 import logging # Importamos el módulo de logging para rastrear eventos y errores
+from urllib.parse import urlparse
 
 """ DJANGO IMPORTS """
 # Importaciones estándar de Django para vistas basadas en función, autenticación, etc.
@@ -23,6 +25,18 @@ from django.utils.text import slugify
 
 
 from django.conf import settings # Importamos settings para configuraciones específicas del entorno
+
+
+# --- Importaciones de funciones de utilidad ---
+from .utils import (
+    construir_configuracion_global, 
+    get_public_ip_address, 
+    dial_permitido, 
+    _ip_valida, # Renombrada de _ip_valida
+    _is_valid_domain,     # Nueva función
+    _is_valid_target_url, # Nueva función
+    CaddyAPIError
+)
 
 """ API REST FRAMEWORK IMPORTS """
 # Importaciones para vistas basadas en API (aunque las vistas proporcionadas son clásicas, las mantenemos por si las usas en otras partes)
@@ -42,242 +56,17 @@ from .models import UserJSON # Modelo para almacenar el JSON de configuración d
 # from .serializers import UserRegisterSerializer # 
 
 
+server_ip = settings.SERVER_PUBLIC_IP
+
 
 # --- Configuración del Logger ---
 # Configura el manejo de logging en tu settings.py para ver estos mensajes 
 logger = logging.getLogger(__name__)
 
-""" 🔵🔵🔵 CONFIGURACIÓN Y FUNCIONES DE CADDY 🔵🔵🔵 """
-# BASE_DIR ya está definido en settings.py y apunta a la raíz de tu proyecto backend.
-# BASE_DIR = settings.BASE_DIR # (Redundante, ya está en settings)
 
-
-# Directorio donde se guardará el caddy.json generado dinámicamente por Django.
-DEPLOY_DIR: str = settings.DEPLOY_DIR # Se espera que DEPLOY_DIR esté definido en settings
-
-# Ruta completa al archivo caddy.json que se genera.
-# Se construye a partir del DEPLOY_DIR configurado en settings.
-JSON_PATH: str = os.path.join(DEPLOY_DIR, "caddy.json")
-
-
-# URL de la API de administración de Caddy. Django enviará peticiones POST a esta URL
-# para recargar la configuración de Caddy.
-# ¡MUY IMPORTANTE para el servidor! Debe ser la dirección y puerto ACCESIBLE por tu aplicación Django
-# en el entorno del servidor. NO uses 'localhost' si Caddy no corre en la misma interfaz de red que Django.
-# Ejemplo en settings.py (usando variable de entorno, muy común en despliegues):
-# CADDY_ADMIN_URL = os.environ.get("CADDY_ADMIN_URL", "http://localhost:2019")
-# En tu despliegue, la variable de entorno CADDY_ADMIN_URL debería estar definida
-# como 'http://nombre_servicio_caddy:2019' (si usas Docker/Kubernetes) o
-# 'http://ip_interna_del_servidor_caddy:2019' (si están en la misma red interna).
-CADDY_URL:   str = getattr(settings, "CADDY_ADMIN_URL", "http://167.235.155.72:2019")
-
-
-STATIC_ROOT: str = settings.STATIC_ROOT  # ruta a collectstatic
-
-
-SERVIDOR_CADDY    = "Cloud_Guardian"
-
-
-# --- Funciones de Ayuda ---
-
-def _ip_valida(cadena: str) -> bool:
-    """
-    Valida si una cadena es una dirección IP (v4/v6) individual o un rango CIDR válido.
-    """
-    try:
-        # ipaddress.ip_network validará ambos formatos. strict=False permite '/32' o '/128'.
-        ipaddress.ip_network(cadena, strict=False)
-        return True
-    except ValueError:
-        # Si ipaddress lanza un ValueError, la cadena no es un formato IP/CIDR válido.
-        return False
-    
-
-def construir_configuracion_global()-> Tuple[bool, str]:
-    """
-    Construye la configuración completa de Caddy en formato JSON.
-    Consolida:
-    1) /static/* → file_server
-    2) rutas de todos los usuarios (filtrando IPs/CIDR inválidos)
-    3) catch-all → :8000
-
-    Devuelve (ok, mensaje).
-    """
-
-    # --- 1. Configuración Base de Caddy ---
-    cfg: Dict = {
-        "admin": {"listen": "0.0.0.0:2019"},
-        "apps": {
-            "http": {
-                "servers": {
-                    SERVIDOR_CADDY: {"listen": [":80", ":443"], "routes": []}
-                }
-            }
-        },
-    }
-    routes: List [Dict[str, Any]] = cfg["apps"]["http"]["servers"][SERVIDOR_CADDY]["routes"]
-    
-    # --- 2. Ruta para Servir Archivos Estáticos (/static/*) ---
-    # Configura Caddy para servir archivos estáticos directamente desde el sistema de archivos.
-    # Esto es mucho más eficiente que servirlos a través de Django/Gunicorn.
-    # settings.STATIC_ROOT debe ser la ruta ABSOLUTA en el SERVIDOR donde 'collectstatic' copia los archivos.
-    # Caddy debe tener permisos de LECTURA en esta ruta.
-    
-    if STATIC_ROOT and os.path.exists(STATIC_ROOT):
-        routes.append(
-            {
-                "match": [{"path": ["/static/*"]}],
-                "handle": [{"handler": "file_server", "root": STATIC_ROOT}],
-            }
-        )
-    else:
-        logger.warning("STATIC_ROOT no existe; se omite file_server.")
-
-
-
-    # --- 3. Rutas de Usuario (Obtenidas de la Base de Datos) ---
-    # Itera sobre la configuración JSON de Caddy guardada para cada usuario en la base de datos (en el modelo UserJSON).
-    # Consolida todas estas rutas individuales en la configuración global de Caddy, filtrando entradas inválidas.
-    try:
-        all_user_configs = UserJSON.objects.all()
-        logger.debug(f"Procesando configuraciones de {len(all_user_configs)} usuarios desde la base de datos.")
-
-        # Itera sobre cada configuración de usuario recuperada.
-        for user_json_obj in all_user_configs: # Usamos un nombre de variable claro (user_json_obj)
-            # Accede a los datos JSON DEPURADOS y VALIDADOS guardados en el campo json_data del modelo UserJSON.
-            # Utilizamos .get con diccionarios vacíos como default para evitar KeyErrors si la estructura no es perfecta.
-            user_data: Dict[str, Any] = user_json_obj.json_data if user_json_obj.json_data is not None else {} # Aseguramos que es un dict
-            user_routes_list: List[Dict[str, Any]] = (
-                user_data
-                    .get("apps", {})
-                    .get("http", {})
-                    .get("servers", {})
-                    .get(SERVIDOR_CADDY, {})   # ← mismo par de llaves aquí
-                    .get("routes", [])
-            )
-
-
-            logger.debug(f"Procesando rutas para usuario '{user_json_obj.user.username}': {len(user_routes_list)} rutas encontradas en su JSON.")
-
-            # Itera sobre cada ruta definida en la configuración de este usuario.
-            for ruta in user_routes_list:
-                # Validación básica de la estructura de la ruta antes de añadirla a la configuración global.
-                # Esto es CRUCIAL para prevenir que JSONs de usuario mal formados o maliciosos rompan la configuración global de Caddy.
-                if not isinstance(ruta, dict) or "match" not in ruta or "handle" not in ruta:
-                    logger.warning(f"[{user_json_obj.user.username}] Descartando ruta mal formada: {ruta}")
-                    continue # Pasa a la siguiente ruta del usuario.
-
-                # Validar el matcher: debe ser una lista no vacía con diccionarios dentro.
-                matchers = ruta.get("match", [])
-                if not isinstance(matchers, list) or not matchers or not isinstance(matchers[0], dict):
-                    logger.warning(f"[{user_json_obj.user.username}] Descartando ruta con matcher inválido: {ruta}")
-                    continue
-
-                first_matcher = matchers[0] # Cogemos el primer matcher para validaciones específicas
-
-                # Lógica específica para rutas con `remote_ip` (usada para bloqueo de IPs).
-                # Filtra rangos de IP inválidos dentro de estos matchers.
-                if "remote_ip" in first_matcher:
-                    remote_ip_matcher = first_matcher.get("remote_ip", {})
-                    ranges_list = remote_ip_matcher.get("ranges", [])
-                    # Validar que 'ranges' es una lista y que cada elemento es una IP/CIDR válido.
-                    if not isinstance(ranges_list, list):
-                        logger.warning(f"[{user_json_obj.user.username}] Descartando ruta con remote_ip: 'ranges' no es lista: {matchers}")
-                        continue
-
-                    # Filtra y valida cada IP/CIDR en la lista de rangos.
-                    valid_ranges = [rng for rng in ranges_list if _ip_valida(rng)] # Usamos la función de ayuda
-
-                    if not valid_ranges:
-                        # Si no quedan rangos IP válidos después del filtro, descarta esta ruta por completo.
-                        logger.warning(f"[{user_json_obj.user.username}] Descartando ruta con remote_ip: rangos inválidos o vacíos: {matchers}")
-                        continue # Pasa a la siguiente ruta del usuario.
-
-                    # Actualiza la lista de rangos IP en el matcher con solo los válidos.
-                    # Asegurar que el diccionario remote_ip existe antes de asignar la lista.
-                    if "remote_ip" not in first_matcher or not isinstance(first_matcher["remote_ip"], dict):
-                        first_matcher["remote_ip"] = {} # Si no existía o no era dict, lo creamos
-                    first_matcher["remote_ip"]["ranges"] = valid_ranges
-
-
-                # Validación adicional: asegurar que la ruta tiene al menos un path definido Y/O un remote_ip válido.
-                paths = first_matcher.get("path", [])
-                has_path_matcher = isinstance(paths, list) and paths # True si es lista y no vacía
-                has_remote_ip_matcher = "remote_ip" in first_matcher and isinstance(first_matcher["remote_ip"].get("ranges"), list) and first_matcher["remote_ip"]["ranges"] # True si tiene remote_ip válido y no vacío
-
-                # Si no tiene un matcher de path válido Y tampoco tiene un matcher de remote_ip válido, descartar.
-                if not has_path_matcher and not has_remote_ip_matcher:
-                    logger.warning(f"[{user_json_obj.user.username}] Descartando ruta sin matcher de path válido O remote_ip válido: {ruta}")
-                    continue
-
-
-                # Validar el handler: debe ser una lista no vacía con diccionarios dentro y tener una clave 'handler'.
-                handles = ruta.get("handle", [])
-                if not isinstance(handles, list) or not handles or not isinstance(handles[0], dict) or "handler" not in handles[0]:
-                    logger.warning(f"[{user_json_obj.user.username}] Descartando ruta con handler inválido: {ruta}")
-                    continue
-                # TODO (CRÍTICO): Añadir validación aquí para asegurar que el handler es UNO PERMITIDO para usuarios.
-                # Ej. solo permitir "static_response" o "reverse_proxy" a destinos internos CONTROLADOS.
-                # La validación actual solo verifica la estructura básica del handler.
-                # Permitir handlers como "exec" aquí sería un riesgo de seguridad ENORME.
-                # Dependiendo de la funcionalidad deseada para los usuarios, esta validación es clave.
-
-
-                # Si la ruta pasa todas las validaciones básicas de estructura y contenido, la añade a la lista de rutas globales.
-                routes.append(ruta) # Añade la ruta válida del usuario a la lista global de rutas
-                logger.debug(f"[{user_json_obj.user.username}] Añadida ruta válida de usuario: {ruta}")
-
-    except Exception as e:
-        # Captura CUALQUIER error inesperado durante el procesamiento de TODAS las configuraciones de usuario.
-        # Esto es un catch-all para proteger la construcción global si algo falla al iterar, acceder a datos de un usuario, etc.
-        logger.error(f"Error CRÍTICO inesperado al procesar TODAS las configuraciones de usuario para la construcción global de Caddy: {e}", exc_info=True)
-        # En producción, si esto falla, las rutas de usuario no se cargarán, pero las rutas estáticas y Django SÍ.
-        # Un mensaje global puede ser útil, pero solo si no interfiere con los mensajes de las vistas.
-        # messages.error(None, f"Error interno crítico al procesar configuraciones de usuario para Caddy: {e}. La configuración puede estar incompleta.")
-
-
-    # --- 4. Ruta "Catch-all" para Gunicorn (Django)
-    routes.append(
-        {
-            "handle": [
-                {
-                    "handler": "reverse_proxy", # Handler para reenviar peticiones
-                    "upstreams": [
-                        # La dirección del servidor backend (Gunicorn/Django).
-                        # Usamos 127.0.0.1 para loopback si Caddy y Gunicorn están en la misma máquina.
-                        { "dial": ":8000" } 
-                    ]
-                }
-            ]
-        }
-    )
-    logger.debug("Añadido catch-all a :8000 (Gunicorn/Django).")
-
-
-    # ── guardar fichero — opcional pero útil ─────────────────
-    os.makedirs(DEPLOY_DIR, exist_ok=True)
-    with open(JSON_PATH, "w", encoding="utf-8") as fh:
-        json.dump(cfg, fh, indent=4)
-    logger.debug("📝 Guardado %s", JSON_PATH)
-
-    # ── recargar Caddy ───────────────────────────────────────
-    try:
-        resp = requests.post(f"{CADDY_URL}/load", json=cfg, timeout=10)
-        if resp.ok:
-            logger.info("✅ Caddy recargado.")
-            return True, "Caddy recargado correctamente."
-        logger.error("❌ Caddy devolvió %s – %s", resp.status_code, resp.text)
-        return False, f"Error {resp.status_code}: {resp.text}"
-    except requests.exceptions.RequestException as exc:
-        logger.error("❌ No se pudo contactar con Caddy: %s", exc)
-        return False, f"No se pudo contactar con Caddy: {exc}"
 
 """ 🔵 VISTAS CLÁSICAS PARA TEMPLATES 🔵 """
 
-# Sugerencia para futuras mejoras:
-# Considera reemplazar el manejo manual de request.POST con Django Forms.
-# Los formularios de Django automatizan la limpieza, validación y manejo de errores,
-# haciendo el código de las vistas más limpio y seguro.
 
 """ FUNCIONES DE SUPERUSUARIO: PARA ELIMINAR USUARIOS """
 @staff_member_required # Solo usuarios marcados como staff (incluye superusuarios) pueden acceder
@@ -300,24 +89,26 @@ def eliminar_usuario(request):
 
         try:
             # Intenta obtener el usuario de la base de datos.
-            user = User.objects.get(username=username)
+            user_to_delete = User.objects.get(username=username)
+            
             # Validación de seguridad: no permitir que un superusuario se elimine a sí mismo o a otro superusuario.
-            if user.is_superuser:
+            if user_to_delete.is_superuser:
                 messages.error(request, "No puedes eliminar un superusuario.")
-                logger.warning(f"Intento de superusuario '{request.user.username}' de eliminar a otro superusuario: '{username}'.")
+                logger.warning(f"Intento de '{request.user.username}' de eliminar a otro superusuario: '{username}'.")
             else:
-                # Elimina el usuario. Gracias a on_delete=CASCADE en el modelo UserJSON,
-                # la configuración de Caddy asociada a este usuario también se eliminará automáticamente.
-                user.delete()
-                logger.info(f"Superusuario '{request.user.username}' eliminó al usuario: '{username}'.")
+                user_to_delete.delete()
+                logger.info(f"Usuario '{request.user.username}' eliminó a: '{username}'.")
 
-                # Después de eliminar al usuario (y su configuración JSON asociada en cascada),
-                # reconstruye la configuración global de Caddy (que ahora no incluirá las rutas del usuario eliminado)
-                # y solicita a Caddy que la recargue.
-                ok, msg = construir_configuracion_global()
-                # Muestra un mensaje de éxito o error basado en si la recarga de Caddy fue exitosa.
-                messages.success(request, f"Usuario '{username}' eliminado. {msg}" if ok else f"Usuario eliminado, pero {msg}")
-                logger.info(f"Resultado de recarga de Caddy tras eliminar usuario '{username}': {msg}")
+                # Reconstruye y recarga la configuración global de Caddy
+                ok, msg = construir_configuracion_global(iniciado_por=f"eliminación de usuario por {request.user.username}")
+                
+                if ok:
+                    messages.success(request, f"Usuario '{username}' eliminado y Caddy recargado.")
+                    logger.info(f"Caddy recargado con éxito tras eliminar a '{username}'.")
+                else:
+                    # Si la recarga de Caddy falla, el usuario ya está eliminado pero la configuración no se aplicó.
+                    messages.warning(request, f"Usuario '{username}' eliminado, pero hubo un problema al recargar Caddy: {msg}")
+                    logger.error(f"Fallo al recargar Caddy tras eliminar a '{username}': {msg}")
 
         except User.DoesNotExist:
             # Maneja el caso en que el nombre de usuario no existe en la base de datos.
@@ -326,7 +117,7 @@ def eliminar_usuario(request):
         except Exception as e:
             # Captura cualquier otro error durante el proceso de eliminación.
             messages.error(request, f"Ocurrió un error al intentar eliminar al usuario '{username}': {e}")
-            logger.error(f"Error inesperado eliminando usuario '{username}' por '{request.user.username}': {e}", exc_info=True)
+            logger.exception(f"Error inesperado al eliminar usuario '{username}' por '{request.user.username}'.")
 
         # Siempre redirige al final de una petición POST exitosa o fallida (para evitar reenvío del formulario).
         return redirect("eliminar_usuario")
@@ -334,17 +125,105 @@ def eliminar_usuario(request):
     # Para peticiones GET, simplemente renderiza el template del formulario de eliminación.
     return render(request, "eliminar_usuario.html")
 
-"""  HOME (DASHBOARD)  """
-@login_required # Solo usuarios autenticados pueden acceder
-def home(request):
-    """
-    Vista principal del dashboard para usuarios autenticados.
-    Simplemente renderiza el template de la página de inicio.
-    """
-    logger.debug(f"Usuario '{request.user.username}' accediendo a la página de inicio.")
-    return render(request, "home.html")
 
-# Las vistas de Login y Register no requieren autenticación previa.
+"""  HOME (DASHBOARD)  """
+@login_required
+def home_view(request):
+    """
+    Panel de control principal.
+    Muestra un resumen de la configuración del usuario con conteos.
+    """
+    logger.debug(f"Usuario '{request.user.username}' accediendo a la página de inicio (home_view).")
+
+    # Obtener la IP pública del servidor para mostrarla en el panel
+    server_ip = get_public_ip_address() 
+
+    try:
+        user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
+        
+        if created:
+            logger.info(f"UserJSON creado automáticamente para '{request.user.username}' (en home_view).")
+            # Inicializar la estructura base de Caddy para un nuevo UserJSON
+            # Asegura que las claves existan con los puertos de settings.py
+            user_cfg_obj.json_data = {
+                "apps": {
+                    "http": {
+                        "servers": {
+                            settings.SERVIDOR_CADDY: {
+                                "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+                                "routes": []
+                            }
+                        }
+                    }
+                }
+            }
+            user_cfg_obj.save()
+        else:
+            # Asegurarse de que la estructura básica de Caddy exista si UserJSON ya existía pero no estaba completo
+            # Esto maneja casos de UserJSONs antiguos o malformados.
+            # No guardamos si no hay cambios, solo aseguramos la estructura para evitar errores al accederla.
+            user_cfg_obj.json_data.setdefault("apps", {}) \
+                                .setdefault("http", {}) \
+                                .setdefault("servers", {}) \
+                                .setdefault(settings.SERVIDOR_CADDY, {"listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"], "routes": []})
+            # No es necesario user_cfg_obj.save() aquí a menos que realmente se modifique json_data
+            # ya que solo estamos "asegurando" la existencia de claves, no reescribiendo la estructura completa.
+
+        # La variable `data` ahora es `user_cfg_obj.json_data`
+        user_caddy_data = user_cfg_obj.json_data
+
+        # --- Obtener Conteos para las Tarjetas Resumen analizando las rutas de Caddy ---
+        domain_proxy_count = 0
+        ip_block_count = 0
+        external_destination_count = 0
+
+        # Accede a las rutas de Caddy del usuario de forma segura
+        routes = user_caddy_data.get("apps", {}).get("http", {}).get("servers", {}).get(settings.SERVIDOR_CADDY, {}).get("routes", [])
+
+        # Itera sobre las rutas para contar los diferentes tipos
+        for route in routes:
+            matchers = route.get("match", [])
+            handle = route.get("handle", [])
+
+            # Para que una ruta sea considerada "del usuario", debe empezar con su nombre de usuario
+            is_user_route = False
+            for matcher_group in matchers:
+                paths = matcher_group.get("path", [])
+                if any(p.startswith(f"/{request.user.username}/") for p in paths):
+                    is_user_route = True
+                    break # Salir del bucle de matchers si ya encontramos una ruta de usuario
+
+            if is_user_route:
+                # Contar bloqueos de IP
+                if any("remote_ip" in m and handle and handle[0].get("handler") == "static_response" and handle[0].get("status_code") == 403 and m["remote_ip"].get("ranges") for m in matchers):
+                    ip_block_count += 1
+                # Contar destinos externos (reverse proxy)
+                elif any(h.get("handler") == "reverse_proxy" and h.get("upstreams") for h in handle):
+                    external_destination_count += 1
+                # Contar otros tipos de rutas protegidas o dominios proxy generales
+                
+                # Esto es una categoría "catch-all" para rutas de usuario no clasificadas s
+                else:
+                    domain_proxy_count += 1 
+
+        context = {
+            'user': request.user,
+            'server_ip': server_ip,
+            'domain_proxy_count': domain_proxy_count,
+            'ip_block_count': ip_block_count,
+            'external_destination_count': external_destination_count,
+            'is_superuser': request.user.is_superuser, 
+        }
+        logger.debug(f"[{request.user.username}] Renderizando home.html con conteos: IP={ip_block_count}, Destinos={external_destination_count}, Dominios={domain_proxy_count}.")
+        return render(request, 'home.html', context)
+    
+    except Exception as e:
+        logger.exception(f"Error CRÍTICO en home_view para '{request.user.username}'.")
+        messages.error(request, f"Error al cargar el panel de control: {e}")
+        
+        # En caso de error, todavía renderiza la página con la IP y el usuario, pero con un mensaje de error.
+        return render(request, 'home.html', {'user': request.user, 'server_ip': server_ip, 'error_message': "No se pudieron cargar todos los datos."})
+
 
 """  LOGIN  """
 def login_view(request):
@@ -374,24 +253,25 @@ def login_view(request):
 
         # Verifica si la autenticación fue exitosa.
         if user:
-            # Si el usuario existe y la contraseña es correcta, inicia la sesión.
+            # Si el usuario existe y la contraseña es correcta, iniciar la sesión.
             auth_login(request, user)
-            messages.success(request, f"Bienvenido {username}!")
+            messages.success(request, f"¡Bienvenido, {username}!")
             logger.info(f"Usuario '{username}' ha iniciado sesión correctamente.")
-            # Redirige al usuario. Si hay un parámetro 'next' en la URL (ej. /login/?next=/config), va allí.
-            # De lo contrario, redirige a la página 'home'.
+            
+            # Redirigir al usuario. Primero intenta a una URL 'next', si no, a 'home'.
             next_url = request.GET.get('next', 'home')
             return redirect(next_url)
         else:
             # Si la autenticación falla (usuario o contraseña incorrectos).
             messages.error(request, "Usuario o contraseña incorrectos.")
             logger.warning(f"Intento de inicio de sesión fallido para usuario: '{username}'.")
-            # Renderiza el template de login de nuevo.
             return render(request, "login.html", {"username": username})
 
     # Para peticiones GET, simplemente renderiza el template del formulario de login.
     logger.debug("Mostrando formulario de login.")
     return render(request, "login.html")
+
+
 
 
 """  REGISTER  """
@@ -431,71 +311,53 @@ def register_view(request):
 
         # Si todas las validaciones pasan, intentamos crear el usuario y su configuración.
         try:
-            # Crea el usuario de Django usando el método recomendado `create_user`.
             user = User.objects.create_user(username=username, password=password1)
             logger.info(f"Nuevo usuario de Django creado: '{username}'.")
-
-            # --- Creación de la Configuración Inicial de Caddy para el Usuario ---
-            # Define la estructura JSON básica para la configuración individual de este nuevo usuario en Caddy.
-            # Inicialmente, la lista de rutas estará vacía. Las vistas posteriores (IPs, Rutas Protegidas) la modificarán.
+            
+            # Estructura base de Caddy para el nuevo usuario
             default_config_json = {
                 "apps": {
                     "http": {
                         "servers": {
-                            "Cloud_Guardian": {
-                                # Los puertos 'listen' en la config individual no son tan relevantes como en la global,
-                                # ya que la config global consolidada es la que usa Caddy. Esto es más un marcador.
-                                "listen": [":80"],
-                                "routes": [] # Lista vacía inicialmente.
+                            settings.SERVIDOR_CADDY: {
+                                "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+                                "routes": []
                             }
                         }
                     }
-                }
+                },
+                
             }
-            # Crea el objeto UserJSON asociado al nuevo usuario y guarda la configuración JSON inicial.
+            
+            # Crear el UserJSON asociado al usuario
             UserJSON.objects.create(user=user, json_data=default_config_json)
-            messages.success(request, f"Usuario '{username}' registrado y configuración inicial creada!")
-            logger.info(f"Configuración inicial de Caddy (UserJSON) creada para el usuario '{username}'.")
-
-            # --- Opcional: Recargar Caddy Inmediatamente Tras el Registro ---
-            # Considera si esto es necesario. Podría ser ineficiente si hay muchos registros rápidos.
-            # Si Caddy recarga periódicamente o los cambios solo se aplican al siguiente inicio de Caddy,
-            # puedes comentar las siguientes líneas.
-            # logger.info(f"Llamando a construir_configuracion_global tras registro de '{username}'.")
-            # ok, msg = construir_configuracion_global()
-            # logger.info(f"Resultado de recarga de Caddy tras registro de '{username}': {msg}")
-            # if not ok:
-            #      messages.warning(request, f"Usuario registrado, pero hubo un problema al recargar Caddy: {msg}")
-
-
-            # Inicia sesión automáticamente con el usuario recién registrado.
+            logger.info(f"UserJSON inicializado para '{username}'.")
+            
+            # Iniciar sesión al usuario recién registrado
             auth_login(request, user)
-            # Redirige al home después del registro e inicio de sesión exitosos.
+            messages.success(request, f"¡Bienvenido, {username}! Tu cuenta ha sido creada.")
             return redirect("home")
-
+        
         except Exception as e:
-            # Captura cualquier error que ocurra durante la creación del usuario o UserJSON.
-            logger.error(f"Error durante el registro del usuario '{username}': {e}", exc_info=True)
-            messages.error(request, f"Ocurrió un error durante el registro: {e}")
-            # Si el usuario de Django se creó pero falló la creación del UserJSON,
-            # es una buena práctica eliminar el usuario de Django para mantener la consistencia.
-            # Verificamos si la variable 'user' existe y tiene una clave primaria (pk).
+            logger.exception(f"Error crítico durante el registro de '{username}'.") 
+            messages.error(request, "Ocurrió un error inesperado durante el registro. Por favor, intenta de nuevo.")
+
+            # Intento de limpiar el usuario si se creó pero UserJSON falló
             if 'user' in locals() and user.pk:
                 try:
-                    user.delete() # Intenta eliminar el usuario creado incompletamente.
-                    logger.warning(f"Usuario '{username}' creado, pero eliminado debido a un fallo posterior (ej. en UserJSON).")
-                    messages.error(request, f"Usuario '{username}' creado, pero falló la configuración inicial. Por favor, intenta registrarte de nuevo.")
+                    user.delete()
+                    logger.warning(f"Usuario '{username}' creado, pero eliminado debido a un fallo en UserJSON.")
+                    
                 except Exception as delete_e:
-                    logger.error(f"Error al limpiar usuario '{username}' después de un error de registro: {delete_e}", exc_info=True)
-                    messages.error(request, f"Usuario '{username}' creado, pero falló la configuración inicial y la limpieza. Contacta al administrador.")
-
-
-            # Renderiza el formulario de registro de nuevo, mostrando el error.
+                    logger.error(f"Error al limpiar usuario '{username}' tras fallo de registro: {delete_e}", exc_info=True)
+                    messages.error(request, f"Fallo en la creación de la cuenta para '{username}' y en la limpieza de datos. Contacta al administrador.")
+                    
             return render(request, "register.html", {"username": username})
 
-    # Para peticiones GET, simplemente renderiza el template del formulario de registro.
     logger.debug("Mostrando formulario de registro.")
     return render(request, "register.html")
+
+
 
 
 """  LOGOUT (cerrar sesión) """
@@ -510,6 +372,8 @@ def logout_view(request):
     messages.success(request, "Sesión cerrada correctamente.")
     # Redirige a la página de login después de cerrar sesión.
     return redirect('login')
+
+
 
 
 """  CONFIGURACIÓN GENERAL  """
@@ -530,236 +394,206 @@ def configuracion(request):
     if is_superuser:
         logger.debug(f"Superusuario '{request.user.username}' accediendo a la configuración global.")
         try:
-            # Intenta leer el archivo caddy.json global del servidor.
-            # Asegúrate de que Django tenga permisos de LECTURA en JSON_PATH.
-            with open(JSON_PATH, "r", encoding="utf-8") as f:
+            with open(settings.JSON_PATH, "r", encoding="utf-8") as f: # Usa settings.JSON_PATH
                 global_config = json.load(f)
-            # Formatea el JSON para mostrarlo en el template.
             config_json = json.dumps(global_config, indent=4)
-            logger.debug(f"Leído caddy.json global de {JSON_PATH}.")
-
-            # Si la petición es POST, el superusuario ha enviado una configuración editada.
-            if request.method == "POST":
-                # Obtiene el texto del JSON enviado en el formulario.
-                new_config_str = request.POST.get("config", "").strip()
-                logger.info(f"Superusuario '{request.user.username}' intentando actualizar la configuración global.")
-
-                try:
-                    # Intenta parsear el texto recibido como JSON.
-                    data = json.loads(new_config_str)
-
-                    # TODO (Opcional): Añadir validación más estricta aquí para superusuarios.
-                    # Aunque son superusuarios, podrías querer validar que el JSON sigue
-                    # una estructura básica esperada para evitar errores graves en Caddy.
-
-                    # Si el JSON es válido, lo guarda SOBREESCRIBIENDO el archivo caddy.json global.
-                    # Django necesita permisos de ESCRITURA en JSON_PATH.
-                    with open(JSON_PATH, "w", encoding="utf-8") as f:
-                        json.dump(data, f, indent=4)
-                    logger.info(f"Archivo caddy.json global actualizado en {JSON_PATH}.")
-
-                    # Llama a la función para reconstruir la configuración global (que leerá el archivo recién guardado)
-                    # y solicitar la recarga a Caddy.
-                    # La función `construir_configuracion_global` ya maneja la recarga por API y devuelve su resultado.
-                    ok, msg = construir_configuracion_global()
-                    # Muestra un mensaje de éxito o error basado en el resultado de la recarga de Caddy.
-                    if ok:
-                        messages.success(request, f"Configuración global actualizada y recargada correctamente. {msg}")
-                        logger.info(f"Recarga de Caddy exitosa tras actualización global por superusuario '{request.user.username}'.")
-                    else:
-                        # Si la recarga falla, mostramos el mensaje de error de Caddy/requests.
-                        messages.error(request, f"Configuración global actualizada, pero {msg}")
-                        logger.warning(f"Fallo en la recarga de Caddy tras actualización global por superusuario '{request.user.username}': {msg}")
-
-                except json.JSONDecodeError:
-                    # Maneja el caso en que el texto recibido no es un JSON válido.
-                    messages.error(request, "Formato JSON inválido enviado.")
-                    logger.warning(f"Superusuario '{request.user.username}' envió JSON inválido para configuración global.")
-                    json_error = True # Indica que el JSON enviado era inválido.
-                    config_json = new_config_str # Muestra el JSON inválido que envió el usuario para que lo corrija.
-                except Exception as e:
-                    # Captura cualquier otro error durante el proceso de guardado o recarga.
-                    messages.error(request, f"Error al guardar o recargar la configuración global: {e}")
-                    logger.error(f"Error al actualizar configuración global por '{request.user.username}': {e}", exc_info=True)
-                    # Intenta volver a leer el archivo por si acaso el error no fue al escribir
-                    try:
-                        with open(JSON_PATH, "r", encoding="utf-8") as f:
-                            global_config = json.load(f)
-                        config_json = json.dumps(global_config, indent=4)
-                    except Exception as read_err:
-                        logger.error(f"Error re-leyendo caddy.json después de error POST: {read_err}")
-                        messages.warning(request, "Error re-leyendo el archivo de configuración después del intento de actualización.")
-
-
-                # En lugar de redirigir, volvemos a renderizar la misma página para que el superusuario vea el resultado,
-                # incluyendo el JSON actual (ya sea el guardado o el inválido que intentó enviar).
-                return render(request, "configuracion.html", {
-                    "config": config_json,
-                    "es_superuser": True,
-                    "json_error": json_error # Pasa el estado de error de JSON al template.
-                })
-
-
+            logger.debug(f"Leído caddy.json global de {settings.JSON_PATH}.")
+            
         except FileNotFoundError:
-            # Maneja el caso en que el archivo caddy.json no existe en la ruta esperada.
-            messages.warning(request, f"El archivo de configuración global '{JSON_PATH}' no se encontró en el servidor. Se creará uno al recargar Caddy o al guardar desde aquí.")
-            config_json = "{}" # Muestra un JSON vacío o una estructura base por defecto en el template.
-            logger.warning(f"Archivo caddy.json global no encontrado en {JSON_PATH} para superusuario '{request.user.username}'.")
-            if request.method == "POST": # Si intentó guardar un archivo que no existía
-                messages.error(request, "No se pudo guardar la configuración: el directorio DEPLOY_DIR puede no existir o no tener permisos de escritura.")
-                logger.error(f"Intento de guardar caddy.json falló para '{request.user.username}': Directorio {DEPLOY_DIR} no existe o sin permisos?", exc_info=True)
-
-            # Renderiza el template mostrando el estado actual (archivo no encontrado).
-            return render(request, "configuracion.html", {
-                "config": config_json,
-                "es_superuser": True
-            })
-
+            messages.warning(request, f"El archivo de configuración global '{settings.JSON_PATH}' no se encontró. Se mostrará un JSON vacío.")
+            config_json = "{}"
+            logger.warning(f"Archivo caddy.json global no encontrado para superusuario '{request.user.username}'.")
+            
         except json.JSONDecodeError:
-            # Maneja el caso en que el archivo caddy.json existe pero contiene JSON inválido.
-            messages.error(request, f"El archivo de configuración global '{JSON_PATH}' contiene JSON inválido. Por favor, corrígelo manualmente en el servidor si es necesario.")
-            logger.error(f"El archivo {JSON_PATH} contiene JSON inválido para superusuario '{request.user.username}'.")
-            config_json = "" # Muestra un campo vacío o indica un error grave en el template.
-            json_error = True # Indica que el archivo tiene un error de JSON.
-            # Renderiza el template indicando el error.
-            return render(request, "configuracion.html", {
-                "config": config_json,
-                "es_superuser": True,
-                "json_error": True # Pasa el estado de error al template.
-            })
-
+            messages.error(request, f"El archivo de configuración global '{settings.JSON_PATH}' contiene JSON inválido. Corrige manualmente.")
+            config_json = "" # Dejar vacío para indicar un error grave
+            json_error = True
+            logger.error(f"El archivo {settings.JSON_PATH} contiene JSON inválido para superusuario '{request.user.username}'.")
+            
         except Exception as e:
-            # Captura cualquier otro error inesperado al intentar leer el archivo.
             messages.error(request, f"Error inesperado al leer el caddy.json global: {e}")
-            logger.error(f"Error inesperado al leer caddy.json global para superusuario '{request.user.username}': {e}", exc_info=True)
-            # Redirige a home si ocurre un error grave al cargar la página.
-            return redirect("home")
+            logger.exception(f"Error inesperado al leer caddy.json global para superusuario '{request.user.username}'.")
+            return redirect("home") # Redirigir a home si hay un error grave al cargar la página
 
-    # --- Lógica para Usuarios Normales ---
-    else: # Si el usuario NO es superusuario.
-        logger.debug(f"Usuario normal '{request.user.username}' accediendo a su configuración.")
-        try:
-            # Intenta obtener el objeto UserJSON para el usuario actual.
-            # get_or_create lo recuperará si existe o creará uno nuevo si no.
-            user_config, created = UserJSON.objects.get_or_create(user=request.user)
-            if created:
-                # Si el objeto UserJSON se acaba de crear, lo inicializamos con una estructura JSON básica.
-                logger.info(f"UserJSON creado automáticamente para el usuario '{request.user.username}' (no existía previamente).")
-                # Verificamos explícitamente si json_data está vacío, aunque get_or_create sin defaults debería dejarlo {}
-                if not user_config.json_data:
-                    user_config.json_data = {
-                        "apps": {
-                            "http": {
-                                "servers": {
-                                    "Cloud_Guardian": {
-                                        "listen": [":80"], # Marcador
-                                        "routes": [] # Empieza con rutas vacías.
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    # Guardamos el objeto recién creado con la estructura inicial.
-                    user_config.save()
-                    logger.debug(f"Inicializado json_data para nuevo UserJSON de '{request.user.username}'.")
-
-
-        except Exception as e:
-            # Captura errores al intentar obtener o crear el objeto UserJSON.
-            messages.error(request, f"Error al obtener la configuración del usuario: {e}")
-            logger.error(f"Error al obtener/crear UserJSON para '{request.user.username}': {e}", exc_info=True)
-            # Redirige a home si no se puede cargar la configuración del usuario.
-            return redirect("home")
-
-        # Si la petición es POST, el usuario normal ha enviado su configuración editada.
+        # Si la petición es POST, el superusuario ha enviado una configuración editada.
         if request.method == "POST":
             # Obtiene el texto del JSON enviado en el formulario.
             new_config_str = request.POST.get("config", "").strip()
-            logger.info(f"Usuario '{request.user.username}' intentando actualizar su configuración JSON.")
+            logger.info(f"Superusuario '{request.user.username}' intentando actualizar la configuración global.")
 
             try:
                 # Intenta parsear el texto recibido como JSON.
                 data = json.loads(new_config_str)
 
-                # TODO (CRÍTICO): Añadir validación ESTRICTA aquí para usuarios normales.
-                # Un usuario normal NO debería poder modificar cualquier parte del JSON de Caddy (ej. los puertos 'listen',
-                # la configuración 'admin', o añadir rutas que no estén bajo su prefijo /username/).
-                # Actualmente, esta vista permite al usuario normal enviar *cualquier* JSON válido,
-                # lo cual es un riesgo de seguridad y estabilidad.
-                # Deberías validar que 'data' tiene la estructura esperada y solo permitir modificaciones
-                # en secciones específicas, como la lista de rutas 'routes'.
-                #
-                # Validación básica actual (solo verifica que la estructura principal existe):
-                if not isinstance(data, dict) or "apps" not in data or "http" not in data.get("apps", {}) or \
-                "servers" not in data.get("apps", {}).get("http", {}) or \
-                "Cloud_Guardian" not in data.get("apps", {}).get("http", {}).get("servers", {}):
-                    messages.error(request, "Estructura JSON de configuración inválida. La estructura básica esperada no se encontró.")
-                    logger.warning(f"Usuario '{request.user.username}' envió JSON con estructura inválida.")
-                    json_error = True # Indica que el JSON enviado era inválido.
-                    config_json = new_config_str # Muestra el JSON inválido enviado.
-                    # Renderiza la página de configuración de nuevo con el JSON inválido.
-                    return render(request, "configuracion.html", {
-                        "config": config_json,
-                        "es_superuser": False,
-                        "json_error": json_error # Pasa el estado de error al template.
-                    })
-                # TODO: Añadir aquí validaciones más granulares sobre QUÉ se puede modificar dentro del JSON.
+                # Si el JSON es válido, lo guarda SOBREESCRIBIENDO el archivo caddy.json global.
+                # Django necesita permisos de ESCRITURA en JSON_PATH.
+                with open(settings.JSON_PATH, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=4)
+                logger.info(f"Archivo caddy.json global actualizado en {settings.JSON_PATH}.")
 
-
-                # Si el JSON es válido (según las validaciones implementadas), lo guarda en el campo json_data del UserJSON.
-                user_config.json_data = data
-                # Guarda el objeto UserJSON actualizado en la base de datos.
-                user_config.save()
-                logger.info(f"Configuración JSON guardada en base de datos para usuario '{request.user.username}'.")
-
-                # Llama a la función para reconstruir la configuración global de Caddy (que leerá la base de datos,
-                # incluyendo el UserJSON recién actualizado) y solicita la recarga a Caddy.
-                ok, msg = construir_configuracion_global()
+                # Llama a la función para reconstruir la configuración global (que leerá el archivo recién guardado)
+                # y solicitar la recarga a Caddy.
+                # La función `construir_configuracion_global` ya maneja la recarga por API y devuelve su resultado.
+                ok, msg = construir_configuracion_global(iniciado_por=f"Superuser config update por {request.user.username}") # Añade iniciado_por
+                    
                 # Muestra un mensaje de éxito o error basado en el resultado de la recarga de Caddy.
-                (messages.success if ok else messages.error)(
-                    request,
-                    msg # El mensaje ya indica si se guardó y recargó, o si falló la recarga.
-                )
-                logger.info(f"Resultado de recarga de Caddy tras actualización de configuración de '{request.user.username}': {msg}")
+                if ok:
+                    messages.success(request, f"Configuración global actualizada y recargada correctamente. {msg}")
+                    logger.info(f"Recarga de Caddy exitosa tras actualización global por superusuario '{request.user.username}'.")
+                        
+                else:
+                    # Si la recarga falla, mostramos el mensaje de error de Caddy/requests.
+                    messages.error(request, f"Configuración global actualizada, pero {msg}")
+                    logger.warning(f"Fallo en la recarga de Caddy tras actualización global por superusuario '{request.user.username}': {msg}")
+                
+                config_json = json.dumps(data, indent=4) # Mostrar la config recién guardada/procesada
+                json_error = False # Si llegamos aquí, el JSON es válido
 
-                # Redirige a la misma página de configuración después del guardado y recarga.
-                # Esto evita el reenvío del formulario al recargar la página en el navegador.
-                return redirect("configuracion")
+
 
             except json.JSONDecodeError:
                 # Maneja el caso en que el texto recibido no es un JSON válido.
                 messages.error(request, "Formato JSON inválido enviado.")
-                logger.warning(f"Usuario '{request.user.username}' envió JSON inválido para su configuración.")
+                logger.warning(f"Superusuario '{request.user.username}' envió JSON inválido para configuración global.")
                 json_error = True # Indica que el JSON enviado era inválido.
-                config_json = new_config_str # Muestra el JSON inválido que envió el usuario.
-                # Renderiza la página de configuración de nuevo con el JSON inválido.
-                return render(request, "configuracion.html", {
-                    "config": config_json,
-                    "es_superuser": False,
-                    "json_error": json_error # Pasa el estado de error al template.
-                })
+                config_json = new_config_str # Muestra el JSON inválido que envió el usuario para que lo corrija.
+                
             except Exception as e:
                 # Captura cualquier otro error durante el proceso de guardado o recarga.
-                messages.error(request, f"Error al procesar la configuración: {e}")
-                logger.error(f"Error al procesar configuración de '{request.user.username}': {e}", exc_info=True)
-                json_error = True # Indica que hubo un error.
-                config_json = new_config_str # Muestra el último JSON intentado.
-                # Renderiza la página de configuración de nuevo con el error.
-                return render(request, "configuracion.html", {
-                    "config": config_json,
-                    "es_superuser": False,
-                    "json_error": json_error # Pasa el estado de error al template.
-                })
+                messages.error(request, f"Error al guardar o recargar la configuración global: {e}")
+                logger.error(f"Error al actualizar configuración global por '{request.user.username}': {e}", exc_info=True)
+                
+            # Después de POST, renderizar la misma página con el resultado
+            return render(request, "configuracion.html", {
+                "config": config_json,
+                "is_superuser": True,
+                "json_is_invalid": json_error
+            })
+            
+            
 
-        # Si la petición es GET (o POST fallido y re-renderizado), mostramos la configuración JSON actual del usuario.
-        # Aseguramos que user_config.json_data tiene un valor por defecto si es None por alguna razón inesperada.
-        user_data = user_config.json_data if user_config.json_data is not None else {}
-        config_json = json.dumps(user_data, indent=4)
-        # Renderiza el template de configuración para usuarios normales.
-        return render(request, "configuracion.html", {
-            "config": config_json,
-            "es_superuser": False
-        })
+    # --- Lógica para Usuarios Normales ---
+    else: # Si el usuario NO es superusuario.
+        logger.debug(f"Usuario normal '{request.user.username}' accediendo a su configuración.")
+        
+        # Obtener o crear el UserJSON del usuario
+        try:
+            user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
+            if created or not user_cfg_obj.json_data: # Si es nuevo o json_data está vacío/None
+                if created:
+                    logger.info(f"UserJSON creado automáticamente para '{request.user.username}'.")
+                else:
+                    logger.warning(f"UserJSON de '{request.user.username}' sin datos, inicializando.")
+                
+                # Inicializar con la estructura Caddy de usuario
+                user_cfg_obj.json_data = {
+                    "apps": {
+                        "http": {
+                            "servers": {
+                                settings.SERVIDOR_CADDY: {
+                                    "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+                                    "routes": []
+                                }
+                            }
+                        }
+                    }
+                }
+                user_cfg_obj.save()
+                logger.debug(f"Inicializado json_data para '{request.user.username}'.")
+            
+            # Obtener el JSON actual del usuario para mostrarlo
+            config_json = json.dumps(user_cfg_obj.json_data, indent=4)
+
+        except Exception as e:
+            messages.error(request, f"Error al obtener la configuración del usuario: {e}")
+            logger.exception(f"Error al obtener/crear UserJSON para '{request.user.username}'.")
+            
+            return redirect("home") # Redirigir a home si no se puede cargar la configuración
+
+        # Si es una petición POST (usuario normal intentando guardar)
+        if request.method == "POST":
+            new_config_str = request.POST.get("config", "").strip()
+            logger.info(f"Usuario '{request.user.username}' intentando actualizar su configuración JSON.")
+
+            try:
+                new_user_data = json.loads(new_config_str) # Intenta parsear el JSON
+
+                # --- VALIDACIÓN CRÍTICA PARA USUARIOS NORMALES ---
+                # Un usuario normal NO debería poder modificar cualquier parte del JSON de Caddy.
+                # Aquí se valida que solo se puedan modificar las rutas (routes) y que estas rutas
+                # contengan el prefijo del nombre de usuario.
+                
+                # Asegurar la estructura básica
+                if not (isinstance(new_user_data, dict) and
+                        new_user_data.get("apps", {}).get("http", {}).get("servers", {}).get(settings.SERVIDOR_CADDY)):
+                    raise ValueError("Estructura JSON básica inválida o incompleta.")
+
+                # Extraer las rutas del nuevo JSON
+                new_routes = new_user_data["apps"]["http"]["servers"][settings.SERVIDOR_CADDY].get("routes", [])
+                if not isinstance(new_routes, list):
+                    raise ValueError("Las rutas deben ser una lista.")
+
+                # Validar que todas las rutas nuevas pertenecen al usuario
+                for route in new_routes:
+                    matchers = route.get("match", [])
+                    is_valid_route_for_user = False
+                    
+                    for matcher_group in matchers:
+                        paths = matcher_group.get("path", [])
+                        if any(p.startswith(f"/{request.user.username}/") for p in paths):
+                            is_valid_route_for_user = True
+                            break
+                    if not is_valid_route_for_user:
+                        raise ValueError(f"La ruta '{route}' no es válida o no pertenece al usuario '{request.user.username}'.")
+                
+                # Si todas las validaciones pasan, actualizar solo la sección de rutas
+                user_cfg_obj.json_data["apps"]["http"]["servers"][settings.SERVIDOR_CADDY]["routes"] = new_routes
+                user_cfg_obj.save()
+                logger.info(f"Configuración JSON guardada en BD para '{request.user.username}'.")
+                
+                # Después de guardar en la DB, reconstruir y recargar Caddy
+                ok, msg = construir_configuracion_global(iniciado_por=f"User config update por {request.user.username}")
+                if ok:
+                    messages.success(request, f"Tu configuración ha sido actualizada y Caddy recargado correctamente. {msg}")
+                    logger.info(f"Recarga de Caddy exitosa tras actualización de '{request.user.username}'.")
+                else:
+                    messages.error(request, f"Tu configuración fue guardada, pero Caddy no pudo recargarse: {msg}")
+                    logger.warning(f"Fallo en la recarga de Caddy tras actualización de '{request.user.username}': {msg}")
+
+                return redirect("configuracion") # Redirigir para evitar reenvío de formulario
+
+            except json.JSONDecodeError:
+                messages.error(request, "Formato JSON inválido enviado. Por favor, revisa la sintaxis.")
+                logger.warning(f"Usuario '{request.user.username}' envió JSON inválido para su configuración.")
+                json_error = True
+                config_json = new_config_str # Mostrar el JSON inválido para que lo corrija
+                
+            except ValueError as ve: # Errores de validación personalizada
+                messages.error(request, f"Error de validación en la configuración: {ve}")
+                logger.warning(f"Usuario '{request.user.username}' envió configuración JSON inválida: {ve}")
+                json_error= True
+                config_json = new_config_str
+                
+            except Exception as e:
+                messages.error(request, f"Ocurrió un error inesperado al procesar tu configuración: {e}")
+                logger.exception(f"Error al procesar configuración de '{request.user.username}'.")
+                json_error = True
+                config_json = new_config_str # Mostrar el último JSON intentado
+
+            # Si hay un error, se renderiza de nuevo la página con el JSON y el error.
+            return render(request, "configuracion.html", {
+                "config": config_json,
+                "is_superuser": False,
+                "json_is_invalid": json_error
+            })
+
+    # Renderizar el template para peticiones GET (o POST con errores)
+    return render(request, "configuracion.html", {
+        "config": config_json,
+        "is_superuser": is_superuser,
+        "json_is_invalid": json_error
+    })
+
 
 
 """  IPs BLOQUEADAS  """
@@ -773,216 +607,159 @@ def ips_bloqueadas(request):
     logger.debug(f"Usuario '{request.user.username}' accediendo a IPs bloqueadas.")
 
     try:
-        # Obtiene o crea el objeto UserJSON para el usuario actual.
-        user_config, created = UserJSON.objects.get_or_create(user=request.user)
-        if created:
-            logger.info(f"UserJSON creado automáticamente para el usuario '{request.user.username}' (no existía en ips_bloqueadas).")
-            # Inicializa con estructura básica si es nuevo y no tiene data.
-            if not user_config.json_data:
-                user_config.json_data = {
-                    "apps": {"http": {"servers": {"Cloud_Guardian": {"listen": [":80"], "routes": []}}}}
+        user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
+        if created or not user_cfg_obj.json_data:
+            if created:
+                logger.info(f"UserJSON creado automáticamente para '{request.user.username}' en ips_bloqueadas.")
+            else:
+                logger.warning(f"UserJSON de '{request.user.username}' sin datos, inicializando en ips_bloqueadas.")
+
+            # Inicializar con la estructura completa de Caddy para el usuario, incluyendo puertos de settings
+            user_cfg_obj.json_data = {
+                "apps": {
+                    "http": {
+                        "servers": {
+                            settings.SERVIDOR_CADDY: {
+                                "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+                                "routes": []
+                            }
+                        }
+                    }
                 }
-                user_config.save()
-                logger.debug(f"Inicializado json_data para nuevo UserJSON de '{request.user.username}' en ips_bloqueadas.")
-
-
-        # Obtiene los datos JSON de la configuración del usuario.
-        data = user_config.json_data
+            }
+            user_cfg_obj.save()
+            logger.debug(f"Inicializado json_data para '{request.user.username}' en ips_bloqueadas.")
 
     except Exception as e:
         # Captura errores al obtener/crear el UserJSON.
-        messages.error(request, f"Error al obtener la configuración del usuario: {e}")
-        logger.error(f"Error al obtener UserJSON en ips_bloqueadas para '{request.user.username}': {e}", exc_info=True)
-        # Redirige a home si ocurre un error grave.
-        return redirect("home")
+        messages.error(request, f"Error al cargar la configuración del usuario: {e}")
+        logger.exception(f"Error al obtener/crear UserJSON para '{request.user.username}' en ips_bloqueadas.")
+        return redirect("home") # Redirigir a home en caso de error crítico
+    
+    # Obtener una referencia mutable a las rutas del usuario
+    user_routes = user_cfg_obj.json_data \
+                    .setdefault("apps", {}) \
+                    .setdefault("http", {}) \
+                    .setdefault("servers", {}) \
+                    .setdefault(settings.SERVIDOR_CADDY, {}) \
+                    .setdefault("routes", [])
+                    
+    # Encontrar la ruta de bloqueo de IP existente para este usuario, si la hay
+    ip_block_route = next((
+        r for r in user_routes
+        if any(p.startswith(f"/{request.user.username}/") for m in r.get("match", []) for p in m.get("path", []))
+        and any("remote_ip" in m for m in r.get("match", []))
+        and r.get("handle", [{}])[0].get("handler") == "static_response"
+        and r.get("handle", [{}])[0].get("status_code") == 403
+    ), None)
 
-    # --- Preparación de Datos y Búsqueda de la Ruta de Bloqueo de IP ---
-    # Asegura que la estructura JSON necesaria existe en los datos del usuario y obtiene la lista de rutas.
-    apps = data.setdefault("apps", {})
-    http = apps.setdefault("http", {})
-    servers = http.setdefault("servers", {})
-    cloud_guardian = servers.setdefault("Cloud_Guardian", {})
-    # 'rutas' es ahora una referencia a la lista `routes` dentro de `data`.
-    rutas = cloud_guardian.setdefault("routes", [])
+    current_blocked_ips = []
+    if ip_block_route:
+        # Extraer las IPs bloqueadas existentes, filtrando cualquier formato inválido
+        current_blocked_ips = [
+            ip for m in ip_block_route.get("match", [])
+            for ip in m.get("remote_ip", {}).get("ranges", [])
+            if _ip_valida(ip)
+        ]
+    logger.debug(f"IPs bloqueadas existentes para '{request.user.username}': {current_blocked_ips}")
 
-    # Intenta encontrar la ruta específica en el JSON del usuario que usamos para bloquear IPs.
-    # La identificamos por:
-    # 1. Tener un matcher con un path que empieza con '/<username>/'.
-    # 2. Tener un matcher 'remote_ip'.
-    # 3. Tener un handler de tipo 'static_response' con status_code 403.
-    ruta_ip_bloqueo = None
-    # Iteramos sobre una copia de la lista de rutas para evitar problemas si la modificamos mientras iteramos.
-    for r in list(rutas):
-        matchers = r.get("match", [])
-        # Verificamos si hay matchers y el primero cumple nuestras condiciones de identificación.
-        if matchers:
-            first_matcher = matchers[0]
-            # 1. Verifica si tiene un path que empieza con el prefijo del usuario.
-            path_matches_prefix = any(p.startswith(f"/{request.user.username}/") for p in first_matcher.get("path", []))
-            # 2. Verifica si tiene un matcher 'remote_ip'.
-            has_remote_ip_matcher = "remote_ip" in first_matcher
-            # 3. Verifica si tiene el handler 'static_response' con status 403.
-            is_403_static_response = (
-                r.get("handle", [{}])[0].get("handler") == "static_response" and
-                r.get("handle", [{}])[0].get("status_code") == 403
-            )
-
-            # Si cumple las 3 condiciones, hemos encontrado la ruta de bloqueo de IP.
-            if path_matches_prefix and has_remote_ip_matcher and is_403_static_response:
-                ruta_ip_bloqueo = r
-                logger.debug(f"Ruta de bloqueo de IP existente encontrada para '{request.user.username}'.")
-                break # Asumimos que solo hay una ruta de este tipo por usuario para simplificar.
-
-    # Inicializa la lista de IPs bloqueadas (deny_ips).
-    # Si encontramos la ruta de bloqueo, extraemos sus rangos de IP.
-    deny_ips = []
-    if ruta_ip_bloqueo:
-        deny_ips = ruta_ip_bloqueo["match"][0]["remote_ip"].get("ranges", [])
-        # Limpiamos la lista de IPs obtenida para asegurar que solo contiene formatos válidos,
-        # por si el JSON guardado previamente contenía entradas corruptas.
-        deny_ips = [ip for ip in deny_ips if _ip_valida(ip)]
-        logger.debug(f"IPs bloqueadas cargadas para '{request.user.username}': {deny_ips}")
-
-
-    # --- Procesamiento de Peticiones POST (Añadir/Eliminar IPs) ---
+    # --- Manejar peticiones POST (Añadir/Eliminar IPs) ---
     if request.method == "POST":
-        # Obtiene la acción solicitada (add o delete) y las IPs del formulario.
         action = request.POST.get("action")
-        ip_add = request.POST.get("ip_add", "").strip()
-        ip_del = request.POST.get("ip_delete", "").strip()
+        ip_input = request.POST.get("ip_value", "").strip() # Usar un único campo de entrada para la IP
 
-        logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en IPs bloqueadas (IP add: '{ip_add}', IP del: '{ip_del}').")
+        logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en IPs bloqueadas con valor: '{ip_input}'.")
 
-        # --- Lógica para Añadir IP ---
-        if action == "add":
-            if not ip_add:
-                messages.warning(request, "Debes introducir la IP/CIDR a bloquear.")
-            elif not _ip_valida(ip_add):
-                # Valida el formato de la IP/CIDR a añadir.
-                messages.error(request, f"«{ip_add}» no es una dirección IP o rango CIDR válida.")
-                logger.warning(f"Usuario '{request.user.username}' intentó añadir IP/CIDR inválido: '{ip_add}'")
-            elif ip_add in deny_ips:
-                # Verifica si la IP/CIDR ya está en la lista.
-                messages.info(request, f"La IP/CIDR {ip_add} ya estaba bloqueada.")
-                logger.info(f"Usuario '{request.user.username}' intentó añadir IP/CIDR ya bloqueado: '{ip_add}'")
+        if not ip_input:
+            messages.warning(request, "Por favor, introduce una dirección IP o rango CIDR.")
+            
+        elif not _ip_valida(ip_input):
+            messages.error(f"'{ip_input}' no es una dirección IP o rango CIDR válida.")
+            
+        else:
+            if action == "add":
+                if ip_input in current_blocked_ips:
+                    messages.info(f"La IP/CIDR {ip_input} ya está bloqueada.")
+                    
+                else:
+                    current_blocked_ips.append(ip_input)
+                    messages.success(f"IP/CIDR {ip_input} añadida a la lista de bloqueo.")
+                    logger.info(f"Usuario '{request.user.username}' añadió IP/CIDR a la lista de bloqueo: '{ip_input}'.")
+                    
+            elif action == "delete":
+                if ip_input not in current_blocked_ips:
+                    messages.warning(f"La IP/CIDR {ip_input} no se encontró en la lista de bloqueo.")
+                    
+                else:
+                    current_blocked_ips.remove(ip_input)
+                    messages.success(f"IP/CIDR {ip_input} eliminada de la lista de bloqueo.")
+                    logger.info(f"Usuario '{request.user.username}' eliminó IP/CIDR de la lista de bloqueo: '{ip_input}'.")
             else:
-                # Si la IP es válida y no está duplicada, la añade a la lista.
-                deny_ips.append(ip_add)
-                messages.success(request, f"Dirección IP/CIDR {ip_add} añadido para bloqueo.")
-                logger.info(f"Usuario '{request.user.username}' añadió IP/CIDR a la lista de bloqueo: '{ip_add}'")
+                messages.error("Acción solicitada inválida.")
+                logger.warning(f"Usuario '{request.user.username}' envió acción inválida '{action}'.")
 
-
-        # --- Lógica para Eliminar IP ---
-        elif action == "delete":
-            if not ip_del:
-                messages.warning(request, "Debes introducir la IP/CIDR a desbloquear.")
-            elif not _ip_valida(ip_del): # Opcional: podrías querer validar el formato también al eliminar.
-                messages.error(request, f"«{ip_del}» no es una dirección IP o rango CIDR válida.")
-                logger.warning(f"Usuario '{request.user.username}' intentó eliminar IP/CIDR con formato inválido: '{ip_del}'")
-            elif ip_del not in deny_ips:
-                # Verifica si la IP/CIDR está en la lista para poder eliminarla.
-                messages.warning(request, f"La IP/CIDR {ip_del} no estaba bloqueada.")
-                logger.info(f"Usuario '{request.user.username}' intentó eliminar IP/CIDR no bloqueado: '{ip_del}'")
-            else:
-                # Si la IP está en la lista, la elimina.
-                deny_ips.remove(ip_del)
-                messages.success(request, f"Dirección IP/CIDR {ip_del} eliminado del bloqueo.")
-                logger.info(f"Usuario '{request.user.username}' eliminó IP/CIDR del bloqueo: '{ip_del}'")
-
-        # --- Actualización de la Configuración del Usuario y Recarga de Caddy ---
-        # Si se realizó una acción válida (se proporcionó una IP para añadir o eliminar), actualizamos el JSON del usuario
-        # y reconstruimos/recargamos la configuración global de Caddy.
-        if action in {"add", "delete"} and (ip_add if action == "add" else ip_del): # Condición para asegurar que hubo un input válido
-            # Construimos la estructura de la ruta de bloqueo de IP basada en la lista `deny_ips` actual.
-            if deny_ips: # Si hay IPs para bloquear en la lista...
-                nueva_ruta_bloqueo = {
+            # Actualizar/eliminar la ruta de bloqueo de IP de Caddy basándose en la lista `current_blocked_ips` modificada
+            if current_blocked_ips: # Si hay IPs para bloquear, asegurarse de que la ruta exista y esté actualizada
+                new_ip_block_route_definition = {
                     "match": [{
-                        # Esta ruta coincidirá con cualquier petición cuyo path empiece con /<username>/
                         "path": [f"/{request.user.username}/*"],
-                        # ...Y cuya IP de origen esté en la lista de rangos `deny_ips`.
-                        "remote_ip": {"ranges": deny_ips}
+                        "remote_ip": {"ranges": current_blocked_ips}
                     }],
                     "handle": [{
-                        # Si coincide, Caddy responderá con un estado 403 (Prohibido) y un cuerpo de texto simple.
                         "handler": "static_response",
                         "status_code": 403,
-                        "body": "IP bloqueada por Cloud Guardian" # Mensaje más informativo
+                        "body": "IP bloqueada por Cloud Guardian"
                     }]
                 }
-                # Buscamos si ya existía una ruta de bloqueo de IP para este usuario (identificada arriba).
-                if ruta_ip_bloqueo:
-                    # Si existía, reemplazamos la ruta vieja por la nueva con la lista de IPs actualizada.
+                if ip_block_route: 
+                    # Encontrar el índice y reemplazar para mantener el orden, o añadir si no se encuentra (no debería pasar)
                     try:
-                        idx = rutas.index(ruta_ip_bloqueo) # Encuentra el índice de la ruta vieja.
-                        rutas[idx] = nueva_ruta_bloqueo # Reemplaza la ruta en la lista `rutas` (que es una referencia a `data`).
+                        idx = user_routes.index(ip_block_route)
+                        user_routes[idx] = new_ip_block_route_definition
                         logger.debug(f"Ruta de bloqueo de IP existente actualizada para '{request.user.username}'.")
+                        
                     except ValueError:
-                        # Esto no debería ocurrir si ruta_ip_bloqueo fue encontrado en la lista original 'rutas'.
-                        # Es un fallback por si acaso la lista cambió inesperadamente entre la búsqueda y el reemplazo.
-                        logger.error(f"Error interno: Ruta de bloqueo de IP no encontrada en la lista original para reemplazo en '{request.user.username}'. Añadiendo como nueva.")
-                        rutas.insert(0, nueva_ruta_bloqueo) # Añadir al principio si no se pudo reemplazar.
-                else:
-                    # Si no existía una ruta de bloqueo de IP para este usuario, la añadimos al principio de la lista de rutas del usuario.
-                    # Añadirla al principio asegura que Caddy la evalúe antes que otras rutas genéricas o el catch-all.
-                    rutas.insert(0, nueva_ruta_bloqueo)
-                    logger.debug(f"Ruta de bloqueo de IP creada y añadida para '{request.user.username}'.")
+                        user_routes.insert(0, new_ip_block_route_definition) # Fallback: añadir al principio
+                        logger.error(f"Ruta de bloqueo de IP no encontrada para reemplazo, añadiendo como nueva para '{request.user.username}'.")
+                        
+                else: # Si la ruta no existía, añadirla
+                    user_routes.insert(0, new_ip_block_route_definition) # Añadir al principio para precedencia
+                    logger.debug(f"Nueva ruta de bloqueo de IP creada para '{request.user.username}'.")
+                    
+            elif ip_block_route: # Si no hay IPs para bloquear y la ruta existía, eliminarla
+                user_routes.remove(ip_block_route)
+                logger.debug(f"Ruta de bloqueo de IP eliminada para '{request.user.username}' (no hay IPs que bloquear).")
 
-            else: # Si la lista de IPs bloqueadas (deny_ips) está vacía...
-                # ...y si existía una ruta de bloqueo de IP para este usuario, la eliminamos.
-                if ruta_ip_bloqueo:
-                    try:
-                        # Eliminamos la ruta de bloqueo de la lista de rutas del usuario.
-                        rutas.remove(ruta_ip_bloqueo)
-                        logger.debug(f"Ruta de bloqueo de IP eliminada porque la lista está vacía para '{request.user.username}'.")
-                    except ValueError:
-                        # Fallback si no se encuentra la ruta aunque creíamos que existía.
-                        logger.error(f"Error interno: Ruta de bloqueo de IP no encontrada en la lista original para eliminación en '{request.user.username}'.")
-
-
-            # --- Guardar Cambios en la Base de Datos y Recargar Caddy ---
-            # Los cambios ya están en el diccionario `data` (ya que 'rutas' es una referencia a una lista dentro de 'data').
-            # Asignamos explícitamente data a user_config.json_data (aunque a menudo no es estrictamente necesario si se modificó in-place)
-            # y guardamos el objeto UserJSON en la base de datos.
-            user_config.json_data = data
+            # Guardar el UserJSON actualizado y disparar la recarga de Caddy
             try:
-                user_config.save() # Persiste los cambios en la base de datos.
-                logger.info(f"Configuración de IPs bloqueadas guardada en DB para usuario '{request.user.username}'.")
+                user_cfg_obj.json_data = user_cfg_obj.json_data # Asegurar que los cambios están listos para guardar
+                user_cfg_obj.save()
+                logger.info(f"Configuración de IPs bloqueadas guardada en DB para el usuario '{request.user.username}'.")
 
-                # Llama a la función global para reconstruir la configuración completa de Caddy
-                # (que ahora incluirá la configuración actualizada del usuario) y recargar Caddy.
-                ok, msg = construir_configuracion_global()
-                # Muestra un mensaje de éxito o error basado en si la recarga de Caddy fue exitosa.
+                ok, msg = construir_configuracion_global(iniciado_por=f"User IP block update by {request.user.username}")
                 (messages.success if ok else messages.error)(
                     request,
-                    f"Operación completada. {msg}" if ok
-                    # Si la recarga falla, indicamos que los cambios se guardaron en la DB, pero Caddy no los aplicó.
-                    else f"Cambios guardados en la base de datos, pero {msg}"
+                    f"Operación completada. {msg}" if ok else f"Cambios guardados en la base de datos, pero {msg}"
                 )
-                logger.info(f"Resultado de recarga de Caddy tras actualización de IPs bloqueadas de '{request.user.username}': {msg}")
+                logger.info(f"Resultado de recarga de Caddy después de la actualización de IPs bloqueadas para '{request.user.username}': {msg}")
 
             except Exception as e:
-                # Captura errores durante el proceso de guardado en la DB o la recarga de Caddy.
-                messages.error(request, f"Error al guardar la configuración de IPs bloqueadas: {e}")
-                logger.error(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (ips_bloqueadas POST): {e}", exc_info=True)
+                messages.error(request, f"Error al guardar la configuración o recargar Caddy: {e}")
+                logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (ips_bloqueadas POST).")
+            
+            return redirect("ips_bloqueadas") # Redirigir para evitar reenvío de formulario
 
+    # Renderizar la página (para peticiones GET o después del procesamiento POST)
+    # Asegurarse de que solo se pasen IPs válidas a la plantilla para mostrar
+    display_ips = [ip for ip in current_blocked_ips if _ip_valida(ip)]
+    logger.debug(f"Renderizando página de IPs bloqueadas para '{request.user.username}' con IPs: {display_ips}")
 
-            # Redirige a la misma página después del procesamiento POST para evitar el reenvío del formulario
-            # y para mostrar el estado actual (la lista de IPs bloqueadas actualizada).
-            return redirect("ips_bloqueadas")
-
-
-    # --- Renderizar la Página (para peticiones GET o después de POST) ---
-    # Prepara la lista de IPs bloqueadas para mostrarla en el template.
-    # Solo incluimos las IPs que son válidas según nuestra función de validación.
-    display_deny_ips = [ip for ip in deny_ips if _ip_valida(ip)]
-    logger.debug(f"Renderizando página de IPs bloqueadas para '{request.user.username}' con IPs: {display_deny_ips}")
-
-    # Renderiza el template `ips_bloqueadas.html`, pasando la lista de IPs bloqueadas.
     return render(
         request,
         "ips_bloqueadas.html",
-        {"deny_ips": display_deny_ips} # Pasamos la lista de IPs que están en el JSON del usuario.
+        {"deny_ips": display_ips}
     )
+
 
 
 """  RUTAS PROTEGIDAS  """
@@ -1053,7 +830,6 @@ def rutas_protegidas(request):
             if path_matches_prefix and not is_ip_block_route:
                 rutas_actuales_paths.extend(paths) # Añade todos los paths definidos en este matcher/ruta.
 
-
     # --- Procesamiento de Peticiones POST (Añadir/Eliminar Rutas) ---
     if request.method == "POST":
         # Obtiene la acción solicitada (add o delete) y la ruta del formulario.
@@ -1111,7 +887,6 @@ def rutas_protegidas(request):
                     # Captura errores durante el proceso de guardado en la DB o la recarga de Caddy.
                     messages.error(request, f"Error al guardar la ruta protegida: {e}")
                     logger.error(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (rutas_protegidas add): {e}", exc_info=True)
-
 
         # --- Lógica para Eliminar Ruta ---
         elif action == "delete":
@@ -1195,7 +970,6 @@ def rutas_protegidas(request):
                     messages.warning(request, f"No se pudo encontrar la ruta {ruta_del} para eliminar en tu configuración.")
                     logger.warning(f"Usuario '{request.user.username}' intentó eliminar una ruta '{ruta_del}' que parecía existir pero no se encontró en la estructura JSON.")
 
-
         # Después de procesar una acción POST (add o delete), redirigimos a la misma página.
         # Esto evita que, si el usuario refresca la página después del POST, se reenvíe el formulario.
         return redirect("rutas_protegidas")
@@ -1237,9 +1011,7 @@ def rutas_protegidas(request):
     return render(request, "rutas_protegidas.html", {
         "rutas": rutas_actuales_paths_render # Pasamos la lista de strings (paths) a mostrar.
     })
-    
-    
-    
+
 
 @login_required
 def destinos_externos(request):
@@ -1247,120 +1019,399 @@ def destinos_externos(request):
     Permite a cada usuario mapear un alias propio (p. ej. /usuario/google)
     a una URL/IP externa (reverse-proxy).
     """
-    user_cfg, _ = UserJSON.objects.get_or_create(user=request.user)
-    data = user_cfg.json_data
+    logger.debug(f"Usuario '{request.user.username}' accediendo a destinos externos.")
 
-    # puntero a la lista de rutas de este user
-    rutas =(data.setdefault("apps", {})
-                .setdefault("http", {})
-                .setdefault("servers", {})
-                .setdefault("Cloud_Guardian", {})
-                .setdefault("routes", []))
+    # 1. Obtenemos (o creamos) el JSON de este usuario
+    try:
+        user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
+        if created or not user_cfg_obj.json_data:
+            if created:
+                logger.info(f"UserJSON creado automáticamente para '{request.user.username}' en destinos_externos.")
+            else:
+                logger.warning(f"UserJSON de '{request.user.username}' sin datos, inicializando en destinos_externos.")
 
-    # ---- carga de alias existentes ---------------------------------
-    destinos: list[dict] = []       # lo que consume el template
-    
-    for r in rutas:
-        
-        # match debe ser lista; tomamos el primero
+            # Inicializar con la estructura completa de Caddy para el usuario
+            user_cfg_obj.json_data = {
+                "apps": {
+                    "http": {
+                        "servers": {
+                            settings.SERVIDOR_CADDY: {
+                                "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+                                "routes": []
+                            }
+                        }
+                    }
+                }
+            }
+            user_cfg_obj.save()
+            logger.debug(f"Inicializado json_data para '{request.user.username}' en destinos_externos.")
+
+        user_routes = user_cfg_obj.json_data \
+                        .setdefault("apps", {}) \
+                        .setdefault("http", {}) \
+                        .setdefault("servers", {}) \
+                        .setdefault(settings.SERVIDOR_CADDY, {}) \
+                        .setdefault("routes", [])
+
+    except Exception as e:
+        messages.error(request, f"Error al cargar la configuración del usuario: {e}")
+        logger.exception(f"Error al obtener/crear UserJSON para '{request.user.username}' en destinos_externos.")
+        return redirect("home") # Redirigir a home en caso de error crítico
+
+    # 2. Re-construimos la lista 'destinos' para el template en cada renderizado (GET y POST)
+    # Esto asegura que la lista 'destinos' siempre refleje el estado actual del user_cfg_obj
+    destinos_para_template = []
+    for r in user_routes:
+        # Identificamos las rutas de reverse_proxy que pertenecen a este usuario
         matchers = r.get("match", [])
         if not matchers:
             continue
         
-        m = matchers[0]                        # dict
-        path_list = m.get("path", [])
+        path_matcher = next((m for m in matchers if "path" in m), None)
+        if not path_matcher:
+            continue
+        
+        path_list = path_matcher.get("path", [])
         if not path_list:
             continue
-
-        path_0 = path_list[0]                 # '/usuario/alias/*'
-        if not path_0.startswith(f"/{request.user.username}/"):
+        
+        full_path_caddy = path_list[0] # Ej: '/usuario/alias/*'
+        
+        # Debe empezar con el prefijo del usuario y ser un proxy
+        if not full_path_caddy.startswith(f"/{request.user.username}/"):
             continue
 
-        # handler tiene que ser lista-de-dicts y ser reverse_proxy
-        handle_list = r.get("handle", [])
-        if (not handle_list or
-            handle_list[0].get("handler") != "reverse_proxy"):
+        handle = r.get("handle", [])
+        if not handle or handle[0].get("handler") != "reverse_proxy":
             continue
-
-        upstreams = handle_list[0].get("upstreams", [])
+        
+        upstreams = handle[0].get("upstreams", [])
         if not upstreams or "dial" not in upstreams[0]:
             continue
 
-        alias = path_0.split("/", 2)[2]                       
-        dial  = upstreams[0]["dial"]       # ej. google.com:443
-        host, _, puerto = dial.partition(":")              # “host”, “:”, “443”
-        url_mostrada = ("https://" if puerto == "443" else "http://") + host
+        alias_caddy = full_path_caddy.split(f"/{request.user.username}/", 1)[1].rstrip("/*")
+        target_url_caddy = upstreams[0]["dial"]
+        
+        # Intentar separar host y puerto para la visualización (simple, no para todas las URLs)
+        host_display = target_url_caddy
+        port_display = ""
+        if "://" in target_url_caddy: # Eliminar esquema para el split de host/port
+            temp_url = target_url_caddy.split("://", 1)[1]
+        else:
+            temp_url = target_url_caddy
 
-        destinos.append(
-            {"alias": alias, "host": host, "puerto": puerto, "url": url_mostrada}
-        )
+        if ":" in temp_url:
+            host_port_split = temp_url.rsplit(":", 1)
+            if len(host_port_split) == 2 and host_port_split[1].isdigit(): # Asegurarse que lo que sigue al : es un puerto
+                host_display, port_display = host_port_split
+            # else: caso de IPv6 sin [] o rutas complejas, se mantiene como un todo
+        
+        destinos_para_template.append({
+            "alias": alias_caddy,
+            "target_url": target_url_caddy,
+            "host": host_display,
+            "port": port_display
+        })
 
-    # ---- POST ------------------------------------------------------
+    # --- Procesamiento de Peticiones POST (Añadir/Eliminar Destinos) ---
     if request.method == "POST":
         action = request.POST.get("action")
+        alias_input = request.POST.get("alias", "").strip()
+        target_url_input = request.POST.get("target_url", "").strip()
+
+        logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en destinos externos (Alias: '{alias_input}', Destino: '{target_url_input}').")
+
 
         if action == "add":
-            alias = request.POST.get("alias", "").strip()
-            url   = request.POST.get("url",   "").strip()
+            if not alias_input or not target_url_input:
+                messages.warning(request, "Debes introducir tanto un alias como una URL/IP de destino.")
+            elif not re.match(r"^[a-zA-Z0-9_-]+$", alias_input): # Validación básica del alias (alfanumérico, guiones)
+                messages.error(request, "El alias solo puede contener letras, números, guiones y guiones bajos.")
+            elif not _is_valid_target_url(target_url_input):
+                messages.error(request, f"La URL/IP de destino '{target_url_input}' no es un formato válido.")
+            else:
+                # Validar si el alias ya existe en las rutas de destino externo del usuario
+                alias_already_exists = any(d.get("alias") == alias_input for d in destinos_para_template)
+                
+                if alias_already_exists:
+                    messages.info(request, f"El alias '{alias_input}' ya existe. Si quieres cambiar su destino, elimínalo primero y luego añádelo de nuevo.")
+                    logger.info(f"Usuario '{request.user.username}' intentó añadir alias duplicado: '{alias_input}'")
+                else:
+                    # Crear la nueva ruta de Caddy para el reverse_proxy
+                    full_path_for_caddy = f"/{request.user.username}/{alias_input.lstrip('/')}/*"
+                    new_route = {
+                        "match": [{"path": [full_path_for_caddy]}],
+                        "handle": [{
+                            "handler": "reverse_proxy",
+                            "upstreams": [{"dial": target_url_input}]
+                        }]
+                    }
+                    user_routes.append(new_route) # Añadir a la lista mutable
 
-            if not alias or not url:
-                messages.warning(request, "Alias y URL son obligatorios.")
-                return redirect("destinos_externos")
-
-            # normaliza URL → dial  (google.com → google.com:443 , http:// → :80)
-            if url.startswith("http://"):
-                dial = url.removeprefix("http://").rstrip("/") + ":80"
-            elif url.startswith("https://"):
-                dial = url.removeprefix("https://").rstrip("/") + ":443"
-            else:                                     # sin esquema → asumimos https
-                dial = url.rstrip("/") + ":443"
-                url  = "https://" + url.lstrip("/")
-
-            # si ya existía, reemplazamos; si no, añadimos
-            nuevo = {
-                "match": [{"path": [f"/{request.user.username}/{alias}/*"]}],
-                "handle": [{
-                    "handler": "reverse_proxy",
-                    "upstreams": [{"dial": dial}],
-                    # para HTTPS remoto
-                    "transport": {"protocol": "http", "tls": {}}
-                }]
-            }
-
-            # elimina posible ruta anterior con el mismo alias
-            rutas[:] = [
-                r for r in rutas 
-                if not (r.get("match", [{}])[0]
-                        .get("path", [""])[0]
-                    .startswith(f"/{request.user.username}/{alias}"))
-            ]
-            rutas.insert(0, nuevo)      
-            msg_ok = f"Alias «{alias}» → {url} guardado."
+                    try:
+                        user_cfg_obj.save() # Persistir los cambios
+                        logger.info(f"Destino externo '{alias_input}' a '{target_url_input}' añadido para '{request.user.username}'.")
+                        ok, msg = construir_configuracion_global(iniciado_por=f"Add external target by {request.user.username}")
+                        if ok:
+                            messages.success(request, f"Destino externo '{alias_input}' configurado y recargado correctamente. {msg}")
+                            logger.info(f"Recarga de Caddy exitosa tras añadir destino externo para '{request.user.username}'.")
+                        else:
+                            messages.error(request, f"Destino externo '{alias_input}' añadido a la base de datos, pero {msg}")
+                            logger.warning(f"Fallo en la recarga de Caddy tras añadir destino externo para '{request.user.username}': {msg}")
+                    except Exception as e:
+                        messages.error(request, f"Error al guardar el destino externo: {e}")
+                        logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (destinos_externos add).")
 
         elif action == "delete":
-            alias = request.POST.get("alias_del", "")
-            rutas[:] = [
-                r for r in rutas 
-                if not (r.get("match", [{}])[0]
-                        .get("path", [""])[0]
-                    .startswith(f"/{request.user.username}/{alias}"))]
-            msg_ok = f"Alias «{alias}» eliminado."
+            if not alias_input:
+                messages.warning(request, "Debes introducir el alias a eliminar.")
+            else:
+                route_found_and_removed = False
+                # Usamos una lista de copia para iterar y modificamos la original
+                for r in list(user_routes): 
+                    matchers = r.get("match", [])
+                    if matchers and matchers[0].get("path"):
+                        current_path = matchers[0]["path"][0]
+                        expected_prefix_for_alias = f"/{request.user.username}/{alias_input.lstrip('/')}"
+                        
+                        # Comprobar que es un proxy y que el path coincide con el alias del usuario
+                        if current_path.startswith(expected_prefix_for_alias) and current_path.endswith("/*"):
+                            handle = r.get("handle", [])
+                            if handle and handle[0].get("handler") == "reverse_proxy":
+                                user_routes.remove(r) # Eliminar de la lista mutable
+                                route_found_and_removed = True
+                                break # Salir después de encontrar y eliminar la primera coincidencia
+                
+                if route_found_and_removed:
+                    try:
+                        user_cfg_obj.save() # Persistir los cambios
+                        logger.info(f"Destino externo '{alias_input}' eliminado para '{request.user.username}'.")
+                        ok, msg = construir_configuracion_global(iniciado_por=f"Delete external target by {request.user.username}")
+                        if ok:
+                            messages.success(request, f"Destino externo '{alias_input}' eliminado y recargado correctamente. {msg}")
+                            logger.info(f"Recarga de Caddy exitosa tras eliminar destino externo para '{request.user.username}'.")
+                        else:
+                            messages.error(request, f"Destino externo '{alias_input}' eliminado de la base de datos, pero {msg}")
+                            logger.warning(f"Fallo en la recarga de Caddy tras eliminar destino externo para '{request.user.username}': {msg}")
+                    except Exception as e:
+                        messages.error(request, f"Error al guardar la eliminación del destino externo: {e}")
+                        logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (destinos_externos delete).")
+                else:
+                    messages.warning(request, f"El alias '{alias_input}' no fue encontrado en tus destinos externos o no corresponde a una ruta de proxy de usuario.")
+                    logger.info(f"Usuario '{request.user.username}' intentó eliminar alias no existente o no proxy: '{alias_input}'")
 
-        else:
-            messages.error(request, "Acción no reconocida.")
-            return redirect("destinos_externos")
+        return redirect("destinos_externos") # Redirigir siempre después de un POST para evitar reenvío
 
-        # ---- guardamos y recargamos Caddy --------------------------
-        user_cfg.json_data = data
-        user_cfg.save()
-        ok, msg = construir_configuracion_global()
-        (messages.success if ok else messages.error)(request, f"{msg_ok} {msg}")
-        return redirect("destinos_externos")
+    # --- Renderizar la Página ---
+    logger.debug(f"Renderizando página de destinos externos para '{request.user.username}' con {len(destinos_para_template)} destinos.")
+    return render(request, "destinos_externos.html", {
+        "destinos": destinos_para_template
+    })
 
-    # ---- GET -------------------------------------------------------
-    return render(request, "destinos.html",
-                {"destinos": destinos, "user": request.user})
 
+
+@login_required # Solo usuarios logueados pueden acceder
+def dominios_proxy_view(request):
+    """
+    Muestra los dominios proxy configurados en Caddy y sus destinos.
+    """
+    logger.debug(f"Usuario '{request.user.username}' accediendo a la vista de dominios proxy.")
+
+    try:
+        # Obtener o crear el objeto UserJSON para el usuario actual.
+        user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
+
+        # Si el objeto es nuevo o no tiene datos, inicialízalo con la estructura básica de Caddy.
+        if created or not user_cfg_obj.json_data:
+            if created:
+                logger.info(f"UserJSON creado automáticamente para '{request.user.username}' en dominios_proxy_view.")
+            else:
+                logger.warning(f"UserJSON de '{request.user.username}' estaba vacío, inicializando en dominios_proxy_view.")
+
+            user_cfg_obj.json_data = {
+                "apps": {
+                    "http": {
+                        "servers": {
+                            settings.SERVIDOR_CADDY: {
+                                "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+                                "routes": []
+                            }
+                        }
+                    }
+                }
+            }
+            user_cfg_obj.save()
+            logger.debug(f"Estructura inicial de Caddy guardada para '{request.user.username}'.")
+
+        # Obtener una referencia mutable a las rutas del usuario.
+        # Esto asegura que cualquier cambio hecho en 'routes' se refleje en user_cfg_obj.json_data.
+        user_routes = user_cfg_obj.json_data \
+                        .setdefault("apps", {}) \
+                        .setdefault("http", {}) \
+                        .setdefault("servers", {}) \
+                        .setdefault(settings.SERVIDOR_CADDY, {}) \
+                        .setdefault("routes", [])
+
+    except Exception as e:
+        messages.error(request, f"Error al cargar la configuración del usuario: {e}")
+        logger.exception(f"Error crítico al obtener/inicializar UserJSON para '{request.user.username}' en dominios_proxy_view.")
+        
+        return redirect("home") # Redirige a home en caso de un error irrecuperable.
+
+    # Lista para almacenar los dominios proxy que se mostrarán en la plantilla.
+    proxied_domains_for_template = []
+
+    # Iterar sobre las rutas del usuario para extraer la información de los dominios proxy.
+    for route in user_routes:
+        hosts = []
+        upstreams = []
+        is_proxy_route = False
+
+        # Extraer hosts de los matchers.
+        for matcher_group in route.get('match', []):
+            if 'host' in matcher_group and isinstance(matcher_group['host'], list):
+                hosts.extend(matcher_group['host'])
+
+        # Extraer destinos (upstreams) si es una ruta de reverse_proxy.
+        for handler_group in route.get('handle', []):
+            if handler_group.get('handler') == 'reverse_proxy':
+                is_proxy_route = True
+                for upstream in handler_group.get('upstreams', []):
+                    if 'dial' in upstream:
+                        upstreams.append(upstream['dial'])
+                break # Solo necesitamos el primer handler de reverse_proxy.
+
+        # Si es una ruta de proxy y tiene hosts y destinos, la añadimos a la lista.
+        if is_proxy_route and hosts and upstreams:
+            for host in hosts:
+                # Opcional: intentar separar host y puerto para visualización si el destino es "host:puerto"
+                # Esta lógica ya la teníamos en destinos_externos, la reuso aquí.
+                display_destinations = []
+                for dest in upstreams:
+                    host_part = dest
+                    port_part = ""
+                    if "://" in dest: # Eliminar esquema para el split de host/port
+                        temp_dest = dest.split("://", 1)[1]
+                    else:
+                        temp_dest = dest
+
+                    if ":" in temp_dest:
+                        host_port_split = temp_dest.rsplit(":", 1)
+                        if len(host_port_split) == 2 and host_port_split[1].isdigit():
+                            host_part, port_part = host_port_split
+
+                    display_destinations.append({
+                        "original": dest,
+                        "host_display": host_part,
+                        "port_display": port_part
+                    })
+
+                proxied_domains_for_template.append({
+                    'domain': host,
+                    'destinations_raw': upstreams, # Para referencia interna si se necesita el formato original
+                    'destinations': display_destinations # Para mostrar host/puerto separado
+                })
+
+    # --- Manejo de Peticiones POST (Añadir/Eliminar Dominios Proxy) ---
+    if request.method == "POST":
+        action = request.POST.get("action")
+        domain_input = request.POST.get("domain", "").strip() # El dominio que el usuario quiere añadir/eliminar
+        target_url_input = request.POST.get("target_url", "").strip() # El destino para el dominio
+
+        logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en dominios proxy (Dominio: '{domain_input}', Destino: '{target_url_input}').")
+
+
+        if action == "add":
+            if not domain_input or not target_url_input:
+                messages.warning(request, "Debes introducir tanto el dominio como la URL de destino.")
+            elif not _is_valid_domain(domain_input):
+                messages.error(request, f"El dominio '{domain_input}' no es un formato válido.")
+            elif not _is_valid_target_url(target_url_input):
+                messages.error(request, f"La URL de destino '{target_url_input}' no es un formato válido.")
+            else:
+                # Comprobar si el dominio ya está siendo proxied por el usuario.
+                domain_already_proxied = any(d.get("domain") == domain_input for d in proxied_domains_for_template)
+
+                if domain_already_proxied:
+                    messages.info(request, f"El dominio '{domain_input}' ya está siendo proxied. Si quieres cambiar su destino, elimínalo y vuelve a añadirlo.")
+                    logger.info(f"Usuario '{request.user.username}' intentó añadir dominio proxy duplicado: '{domain_input}'.")
+                else:
+                    # Construir la nueva ruta de Caddy para el dominio proxy.
+                    new_proxy_route = {
+                        "match": [{"host": [domain_input]}],
+                        "handle": [{
+                            "handler": "reverse_proxy",
+                            "upstreams": [{"dial": target_url_input}]
+                        }]
+                    }
+                    user_routes.append(new_proxy_route) # Añadir a la lista mutable.
+
+                    try:
+                        user_cfg_obj.save() # Guardar los cambios en la BD.
+                        logger.info(f"Dominio proxy '{domain_input}' a '{target_url_input}' añadido para '{request.user.username}'.")
+                        
+                        # Reconstruir y recargar Caddy.
+                        ok, msg = construir_configuracion_global(iniciado_por=f"Add domain proxy by {request.user.username}")
+                        if ok:
+                            messages.success(request, f"Dominio proxy '{domain_input}' configurado y recargado correctamente. {msg}")
+                            logger.info(f"Recarga de Caddy exitosa tras añadir dominio proxy para '{request.user.username}'.")
+                        else:
+                            messages.error(request, f"Dominio proxy '{domain_input}' añadido a la base de datos, pero {msg}")
+                            logger.warning(f"Fallo en la recarga de Caddy tras añadir dominio proxy para '{request.user.username}': {msg}")
+                    except Exception as e:
+                        messages.error(request, f"Error al guardar el dominio proxy: {e}")
+                        logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (add domain proxy).")
+
+        elif action == "delete":
+            if not domain_input:
+                messages.warning(request, "Debes introducir el dominio a eliminar.")
+            else:
+                route_found_and_removed = False
+                # Iterar sobre una copia para poder modificar la lista original.
+                for r in list(user_routes):
+                    hosts_in_route = []
+                    for matcher_group in r.get('match', []):
+                        if 'host' in matcher_group and isinstance(matcher_group['host'], list):
+                            hosts_in_route.extend(matcher_group['host'])
+                    
+                    # Verificar si este es el dominio que queremos eliminar Y si es un proxy.
+                    if domain_input in hosts_in_route:
+                        for handler_group in r.get('handle', []):
+                            if handler_group.get('handler') == 'reverse_proxy':
+                                user_routes.remove(r) # Eliminar la ruta de la lista.
+                                route_found_and_removed = True
+                                break # Salir después de encontrar y eliminar.
+                    if route_found_and_removed:
+                        break # Salir del bucle principal si ya eliminamos.
+
+                if route_found_and_removed:
+                    try:
+                        user_cfg_obj.save() # Guardar los cambios.
+                        logger.info(f"Dominio proxy '{domain_input}' eliminado para '{request.user.username}'.")
+                        
+                        ok, msg = construir_configuracion_global(iniciado_por=f"Delete domain proxy by {request.user.username}")
+                        if ok:
+                            messages.success(request, f"Dominio proxy '{domain_input}' eliminado y recargado correctamente. {msg}")
+                            logger.info(f"Recarga de Caddy exitosa tras eliminar dominio proxy para '{request.user.username}'.")
+                        else:
+                            messages.error(request, f"Dominio proxy '{domain_input}' eliminado de la base de datos, pero {msg}")
+                            logger.warning(f"Fallo en la recarga de Caddy tras eliminar dominio proxy para '{request.user.username}': {msg}")
+                    except Exception as e:
+                        messages.error(request, f"Error al guardar la eliminación del dominio proxy: {e}")
+                        logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (delete domain proxy).")
+                else:
+                    messages.warning(request, f"El dominio '{domain_input}' no fue encontrado en tus dominios proxy o no corresponde a un proxy gestionado.")
+                    logger.info(f"Usuario '{request.user.username}' intentó eliminar dominio proxy no existente: '{domain_input}'.")
+
+        return redirect("dominios_proxy_view") # Redirigir siempre después de un POST.
+
+    # --- Renderizar la Página ---
+    context = {
+        'dominios': proxied_domains_for_template,
+        'domain_proxy_count': len(proxied_domains_for_template),
+    }
+    logger.debug(f"Renderizando página de dominios proxy para '{request.user.username}' con {context['domain_proxy_count']} dominios.")
+    return render(request, 'dominios_proxy.html', context)
 
 
 # """ 🔴 API ORIGINAL (Deshabilitada) 🔴 """

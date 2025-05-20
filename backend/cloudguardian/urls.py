@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
-    home, login_view, register_view, logout_view, configuracion, ips_bloqueadas, rutas_protegidas,
-    eliminar_usuario, destinos_externos
+    home_view, login_view, register_view, logout_view, configuracion, ips_bloqueadas, rutas_protegidas,
+    eliminar_usuario, destinos_externos, dominios_proxy_view
 )
 # importamos las funciones y clases creadas en views
 
@@ -9,7 +9,7 @@ from rest_framework.authtoken.views import obtain_auth_token  # importamos la vi
 
 urlpatterns = [
     # Vistas normales (Templates)
-    path('', home, name='home'),
+    path('', home_view, name='home'),
     
     path('login/', login_view, name='login'),
     path('register/', register_view, name='register'),
@@ -18,7 +18,9 @@ urlpatterns = [
     path('configuracion/', configuracion, name='configuracion'),
     path('ips-bloqueadas/', ips_bloqueadas, name='ips_bloqueadas'),
     path('rutas-protegidas/', rutas_protegidas, name='rutas_protegidas'),
-        path("destinos/", destinos_externos, name="destinos_externos"),
+    path("destinos/", destinos_externos, name="destinos_externos"),
+    
+    path('dominios_proxy/', dominios_proxy_view, name='dominios_proxy_view'),
     
     # URL para eliminar usuario (superuser, template)
     path('admin/eliminar-usuario/', eliminar_usuario, name='eliminar_usuario'),
