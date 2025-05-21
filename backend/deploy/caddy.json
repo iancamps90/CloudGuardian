@@ -5,7 +5,7 @@
     "apps": {
         "http": {
             "servers": {
-                "Cloud_Guardian": {
+                "Cloud_Guardian_App": {
                     "listen": [
                         ":80"
                     ],
@@ -26,147 +26,6 @@
                             ]
                         },
                         {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian90/*"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a ian90"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/api/*"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /api/*"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/nike/*"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "reverse_proxy",
-                                    "upstreams": [
-                                        {
-                                            "dial": "www.nike.com:443"
-                                        }
-                                    ],
-                                    "transport": {
-                                        "protocol": "http",
-                                        "tls": {}
-                                    }
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/*"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "status_code": 403,
-                                    "body": "IP bloqueada por Cloud Guardian"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/google/*"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "reverse_proxy",
-                                    "upstreams": [
-                                        {
-                                            "dial": "www.google.com:80"
-                                            
-                                        }
-                                    ],
-                                    "headers": {
-                                        "request": {
-                                            "set": {
-                                                "Host": [
-                                                    "www.google.com"
-                                                ]
-                                            }
-                                        }
-                                    },
-                                    "transport": {
-                                        "protocol": "http",
-                                        "tls": {}
-                                    }
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/ian1990/casa"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "body": "Acceso permitido a /ian1990/casa (Gestionado por Cloud Guardian)"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "path": [
-                                        "/nube/*"
-                                    ]
-                                }
-                            ],
-                            "handle": [
-                                {
-                                    "handler": "static_response",
-                                    "status_code": 403,
-                                    "body": "IP bloqueada"
-                                }
-                            ]
-                        },
-                        {
-                            "match": [
-                                {
-                                    "host": [
-                                        "https://167.235.155.72/"
-                                    ]
-                                    
-                                }
-                            ],
                             "handle": [
                                 {
                                     "handler": "reverse_proxy",
@@ -179,16 +38,16 @@
                                         "request": {
                                             "set": {
                                                 "Host": [
-                                                    "{host}"
+                                                    "{http.request.host}"
                                                 ],
                                                 "X-Real-IP": [
-                                                    "{remote_ip}"
+                                                    "{http.request.remote_ip}"
                                                 ],
                                                 "X-Forwarded-For": [
-                                                    "{remote_ip}"
+                                                    "{http.request.remote_ip}"
                                                 ],
                                                 "X-Forwarded-Proto": [
-                                                    "http"
+                                                    "{http.request.scheme}"
                                                 ]
                                             }
                                         }

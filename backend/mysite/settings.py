@@ -247,4 +247,6 @@ REST_FRAMEWORK = {
 }
 
 LOGIN_URL = '/login/'
+LOGIN_REDIRECT_URL = '/' # Después de iniciar sesión, redirige a la raíz
+LOGOUT_REDIRECT_URL = '/login/' # Después de cerrar sesión, redirige al login
 
