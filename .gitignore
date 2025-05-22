@@ -8,8 +8,10 @@ node_modules/
 .env.local
 venv/
 venv/
+backend/static/favicon-new.ico
 
-
+# Directorio de logs completo
+backend/logs/
 
 # Ignorar archivos de Caddy generados
 /backend/deploy/caddy.json
@@ -24,5 +26,5 @@ venv/
 # Ignorar entornos virtuales
 /venv/
 
-backend/logs/
 backend/caddy_configs/caddy.json
+
