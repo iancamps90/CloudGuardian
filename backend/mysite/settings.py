@@ -17,14 +17,13 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# --- MOVE THESE LINES HERE ---
-# Ensure log directory exists
+
+#  log directory exists
 LOG_DIR = BASE_DIR / 'logs'
-os.makedirs(LOG_DIR, exist_ok=True) # This will create the directory if it doesn't exist
-# --- END MOVE ---
+os.makedirs(LOG_DIR, exist_ok=True) 
+
 
 # Identificador del servidor Caddy que usas en tu configuración JSON
-# Ej: "Cloud_Guardian", "mi_proxy_principal"
 SERVIDOR_CADDY = "Cloud_Guardian"
 
 # Puertos en los que Caddy escuchará el tráfico HTTP y HTTPS

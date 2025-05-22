@@ -8,7 +8,7 @@ node_modules/
 .env.local
 venv/
 venv/
-backend/deploy/caddy.json.save
+
 
 
 # Ignorar archivos de Caddy generados
@@ -23,3 +23,6 @@ backend/deploy/caddy.json.save
 
 # Ignorar entornos virtuales
 /venv/
+
+backend/logs/
+backend/caddy_configs/caddy.json

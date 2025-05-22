@@ -115,13 +115,13 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
     Recorre todos los UserJSON, construye un único caddy.json y llama a /load.
     Devuelve (ok, mensaje).
     """
-    from .models import UserJSON                      # import-local → sin ciclos
+    from .models import UserJSON                      
 
     pref = f"[{iniciado_por}] " if iniciado_por else ""
     logger.info(pref + "Generando configuración global de Caddy…")
 
     cfg: Dict[str, Any] = {
-        "admin": {"listen": "0.0.0.0:2019"},
+        "admin": {"listen": "127.0.0.1:2019"},
         "apps": {
             "http": {
                 "servers": {
