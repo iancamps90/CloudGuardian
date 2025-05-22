@@ -71,7 +71,7 @@ DJANGO_APP_DIAL = os.environ.get("DJANGO_APP_DIAL", ":8000")
 SECRET_KEY = 'django-insecure-0b982cj6p8u6zjsj)-du$i9d@k*9xjh0(0%zo8vtdy$xx-2mn&'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = ['167.235.155.72', 'localhost', '127.0.0.1']
 
