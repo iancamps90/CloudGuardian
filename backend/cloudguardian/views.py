@@ -127,6 +127,7 @@ def eliminar_usuario(request):
 
 
 """  HOME (DASHBOARD)  """
+@login_required
 def home_view(request):
     """
     Panel de control principal.
