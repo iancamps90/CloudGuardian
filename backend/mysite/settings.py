@@ -47,7 +47,7 @@ CADDY_ADMIN_URL = os.environ.get("CADDY_ADMIN_URL", "http://127.0.0.1:2019") # V
 # Directorio donde Django puede escribir el caddy.json.
 # En producción, esto debería ser un directorio persistente y con permisos adecuados.
 # Ej: /var/lib/cloudguardian/caddy_configs/
-DEPLOY_DIR = os.environ.get("DEPLOY_CONFIG_DIR", BASE_DIR / 'caddy_configs')
+DEPLOY_DIR = os.environ.get("DEPLOY_CONFIG_DIR", BASE_DIR / 'deploy')
 # Si usas Path, asegúrate de que sea Path(os.environ.get(...))
 if not isinstance(DEPLOY_DIR, Path): # Convertir a Path si es una cadena
     DEPLOY_DIR = Path(DEPLOY_DIR)
