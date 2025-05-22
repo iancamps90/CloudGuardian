@@ -23,7 +23,7 @@ urlpatterns = [
     path('dominios_proxy/', dominios_proxy_view, name='dominios_proxy_view'),
     
     # URL para eliminar usuario (superuser, template)
-    path('admin/eliminar-usuario/', eliminar_usuario, name='eliminar_usuario'),
+    path('eliminar-usuario/', eliminar_usuario, name='eliminar_usuario'),
 
     # API Endpoints
     #path('api/register/', register, name='api-register'),

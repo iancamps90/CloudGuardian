@@ -17,13 +17,13 @@ from urllib.parse import urlparse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
-from django.contrib.auth.decorators import login_required # Decorador para requerir login
+from django.contrib.auth.decorators import login_required, user_passes_test # Decorador para requerir login
 from django.contrib.admin.views.decorators import staff_member_required # Decorador para requerir staff/superuser
 # from django.utils.decorators import method_decorator # (No usado en vistas basadas en función aquí)
 from django.contrib import messages # Sistema de mensajes de Django
 from django.views.decorators.csrf import csrf_exempt # (Usado si deshabilitas CSRF, úsalo con precaución)
 from django.utils.text import slugify
-
+from django.db import IntegrityError
 
 from django.conf import settings # Importamos settings para configuraciones específicas del entorno
 
@@ -33,8 +33,8 @@ from .utils import (
     construir_configuracion_global, 
     get_public_ip_address, 
     dial_permitido, 
-    _is_valid_domain,     # Nueva función
-    _is_valid_target_url, # Nueva función
+    _is_valid_domain,    
+    _is_valid_target_url, 
     CaddyAPIError
 )
 
@@ -71,61 +71,36 @@ logger = logging.getLogger(__name__)
 
 
 """ FUNCIONES DE SUPERUSUARIO: PARA ELIMINAR USUARIOS """
-@staff_member_required # Solo usuarios marcados como staff (incluye superusuarios) pueden acceder
+@login_required
+@user_passes_test(lambda u: u.is_superuser, login_url='/') # Solo superusuarios
 def eliminar_usuario(request):
-    """
-    Vista para que un superusuario pueda eliminar usuarios de la aplicación.
-    Después de eliminar un usuario, reconstruye y recarga la configuración global de Caddy
-    para eliminar las rutas asociadas a ese usuario.
-    """
-    # Solo procesamos peticiones POST para eliminar
-    if request.method == "POST":
-        # Obtenemos el nombre de usuario del formulario POST.
-        username = request.POST.get("username", "").strip()
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        username_to_delete = request.POST.get('username')
 
-        # Validación básica: el nombre de usuario no debe estar vacío.
-        if not username:
-            messages.warning(request, "Debes introducir el nombre de usuario a eliminar.")
-            # Redirige de vuelta a la misma página para mostrar el mensaje
-            return redirect("eliminar_usuario")
-
-        try:
-            # Intenta obtener el usuario de la base de datos.
-            user_to_delete = User.objects.get(username=username)
-            
-            # Validación de seguridad: no permitir que un superusuario se elimine a sí mismo o a otro superusuario.
-            if user_to_delete.is_superuser:
-                messages.error(request, "No puedes eliminar un superusuario.")
-                logger.warning(f"Intento de '{request.user.username}' de eliminar a otro superusuario: '{username}'.")
-            else:
-                user_to_delete.delete()
-                logger.info(f"Usuario '{request.user.username}' eliminó a: '{username}'.")
-
-                # Reconstruye y recarga la configuración global de Caddy
-                ok, msg = construir_configuracion_global(iniciado_por=f"eliminación de usuario por {request.user.username}")
-                
-                if ok:
-                    messages.success(request, f"Usuario '{username}' eliminado y Caddy recargado.")
-                    logger.info(f"Caddy recargado con éxito tras eliminar a '{username}'.")
+        if action == 'delete' and username_to_delete:
+            try:
+                user_to_delete = User.objects.get(username=username_to_delete)
+                if user_to_delete.is_superuser and user_to_delete != request.user:
+                    messages.error(request, f"No puedes eliminar al superusuario '{username_to_delete}'.")
+                elif user_to_delete == request.user:
+                    messages.error(request, "No puedes eliminar tu propia cuenta.")
                 else:
-                    # Si la recarga de Caddy falla, el usuario ya está eliminado pero la configuración no se aplicó.
-                    messages.warning(request, f"Usuario '{username}' eliminado, pero hubo un problema al recargar Caddy: {msg}")
-                    logger.error(f"Fallo al recargar Caddy tras eliminar a '{username}': {msg}")
+                    user_to_delete.delete()
+                    messages.success(request, f"Usuario '{username_to_delete}' eliminado correctamente.")
+            except User.DoesNotExist:
+                messages.error(request, f"El usuario '{username_to_delete}' no existe.")
+            except IntegrityError:
+                messages.error(request, f"No se pudo eliminar al usuario '{username_to_delete}' debido a datos relacionados. Intenta eliminarlo manualmente si es necesario.")
+            except Exception as e:
+                messages.error(request, f"Error al eliminar usuario: {e}")
+        else:
+            messages.error(request, "Acción no válida o usuario no especificado.")
 
-        except User.DoesNotExist:
-            # Maneja el caso en que el nombre de usuario no existe en la base de datos.
-            messages.error(request, f"No existe el usuario '{username}'.")
-            logger.warning(f"Superusuario '{request.user.username}' intentó eliminar un usuario no existente: '{username}'.")
-        except Exception as e:
-            # Captura cualquier otro error durante el proceso de eliminación.
-            messages.error(request, f"Ocurrió un error al intentar eliminar al usuario '{username}': {e}")
-            logger.exception(f"Error inesperado al eliminar usuario '{username}' por '{request.user.username}'.")
+        return redirect('eliminar_usuario')
 
-        # Siempre redirige al final de una petición POST exitosa o fallida (para evitar reenvío del formulario).
-        return redirect("eliminar_usuario")
-
-    # Para peticiones GET, simplemente renderiza el template del formulario de eliminación.
-    return render(request, "eliminar_usuario.html")
+    users = User.objects.all().order_by('username')
+    return render(request, 'eliminar_usuario.html', {'users': users})
 
 
 """  HOME (DASHBOARD)  """

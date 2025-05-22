@@ -4,9 +4,9 @@
 {% block title %}Panel de control - CloudGuardian{% endblock %} 
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-8 animate-fade-in"> {# Mayor ancho y animación #}
+<div class="max-w-7xl mx-auto px-4 py-8 animate-fade-in"> 
 
-    {# Encabezado de bienvenida con un enfoque más dinámico #}
+    {# Encabezado de bienvenida #}
     <h1 class="text-5xl font-extrabold mb-6 text-gray-900 dark:text-white leading-tight flex items-center">
         <i class="fa-solid fa-cloud-bolt text-blue-500 mr-4"></i> Bienvenido, 
         <span class="text-blue-600 dark:text-blue-400 ml-2 animate-pulse-once">{{ user.username }}</span>!
@@ -61,7 +61,7 @@
         </a>
         {% endif %}
 
-        {# Tarjeta: IPs Bloqueadas con Conteo - Estilo visualmente más impactante #}
+        {# Tarjeta: IPs Bloqueadas con Conteo - #}
         <a href="{% url 'ips_bloqueadas' %}"
             class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
                 bg-white dark:bg-gray-800 
@@ -80,7 +80,7 @@
             </p>
         </a>
 
-        {# Tarjeta: Rutas Protegidas - Conteo si está disponible #}
+        {# Tarjeta: Rutas Protegidas  #}
         <a href="{% url 'rutas_protegidas' %}"
             class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
                 bg-white dark:bg-gray-800 
@@ -101,7 +101,7 @@
             </div>
         </a>
 
-        {# Tarjeta: Destinos Externos con Conteo #}
+        {# Tarjeta: Destinos Externos  #}
         <a href="{% url 'destinos_externos' %}"
             class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
                 bg-white dark:bg-gray-800 
@@ -120,7 +120,7 @@
             </p>
         </a>
 
-        {# Tarjeta: Dominios Proxy con Conteo #}
+        {# Tarjeta: Dominios Proxy  #}
         <a href="{% url 'dominios_proxy_view' %}" 
             class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
                 bg-white dark:bg-gray-800 

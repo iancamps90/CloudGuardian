@@ -9,7 +9,7 @@
 
     <link rel="icon" type="image/png" href="{% static 'favicon.ico' %}">
 
-    {# Script para detección de tema: Previene FOUT (Flash of Unstyled Content) #}
+    {# Script para detección de tema: Previene FOUT  #}
     <script>
         // Este script se ejecuta ANTES de que el DOM esté completamente cargado.
         // Aplica o remueve la clase 'dark' al <html> para evitar un "flash" de tema incorrecto.
@@ -29,32 +29,38 @@
         }
     </script>
     
-    <!-- Tailwind CDN -->
+    {# Carga de Tailwind CSS #}
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            darkMode: 'class', // modo oscuro
+            darkMode: 'class', // Habilitar modo oscuro por clase
             theme: {
                 extend: {
+                    colors: {
+                        primary: {"50":"#eff6ff","100":"#dbeafe","200":"#bfdbfe","300":"#93c5fd","400":"#60a5fa","500":"#3b82f6","600":"#2563eb","700":"#1d4ed8","800":"#1e40af","900":"#1e3a8a","950":"#172554"}
+                    },
                     animation: {
-                        'slide-in-right': 'slide-in-right 0.4s ease-out forwards', // 'forwards' mantiene el estado final
-                        'fade-in': 'fade-in 0.3s ease-in-out forwards',
-                        'pulse-once': 'pulse 0.7s ease-out 1', // Animación de un solo pulso
-                        'spin-slow': 'spin 3s linear infinite', // Spin más lento para iconos
+                        'fade-in': 'fadeIn 0.5s ease-out forwards',
+                        'fade': 'fade 0.5s ease-out forwards',
+                        'pulse-once': 'pulseOnce 1s ease-in-out forwards',
+                        'zoom-in': 'zoomIn 0.3s ease-out forwards', 
                     },
                     keyframes: {
-                        'slide-in-right': {
-                            '0%': { transform: 'translateX(100%)', opacity: '0' },
-                            '100%': { transform: 'translateX(0)', opacity: '1' },
+                        fadeIn: {
+                            '0%': { opacity: 0 },
+                            '100%': { opacity: 1 },
                         },
-                        'fade-in': {
-                            '0%': { opacity: '0' },
-                            '100%': { opacity: '1' },
+                        fade: {
+                            '0%': { opacity: 0 },
+                            '100%': { opacity: 1 },
                         },
-                        // Keyframes para el pulso (ya existen en Tailwind, pero se redefinen si necesitas personalización)
-                        pulse: {
+                        pulseOnce: {
                             '0%, 100%': { opacity: 1 },
-                            '50%': { opacity: .5 },
+                            '50%': { opacity: 0.8 },
+                        },
+                        zoomIn: {
+                            '0%': { transform: 'scale(0.8)', opacity: '0' },
+                            '100%': { transform: 'scale(1)', opacity: '1' },
                         }
                     }
                 }
