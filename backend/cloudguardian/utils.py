@@ -31,19 +31,6 @@ PUERTOS_PERMITIDOS = {80, 443}
 
 
 
-def _ip_valida(cadena: str) -> bool:
-    """
-    Valida si una cadena es una dirección IP (v4/v6) individual o un rango CIDR válido.
-    """
-    try:
-        # ipaddress.ip_network validará ambos formatos. strict=False permite '/32' o '/128'.
-        ipaddress.ip_network(cadena, strict=False)
-        return True
-    except ValueError:
-        # Si ipaddress lanza un ValueError, la cadena no es un formato IP/CIDR válido.
-        return False
-
-
 
 def dial_permitido(host: str, puerto: int) -> bool:
     """

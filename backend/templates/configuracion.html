@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Configuración de Caddy{% endblock %} {# More specific title #}
+{% load static %}
+
+{% block title %}Configuración de Caddy{% endblock %} 
 
 {% block content %}
 
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"> {# Add a wrapper for consistent padding #}
-    <div class="bg-white dark:bg-gray-800 shadow-xl rounded-lg p-6 lg:p-8"> {# Card-like container #}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"> 
+    <div class="bg-white dark:bg-gray-800 shadow-xl rounded-lg p-6 lg:p-8"> 
         <h2 class="text-3xl font-extrabold mb-4 text-gray-900 dark:text-white flex items-center">
-            <i class="fas fa-cogs mr-3 text-blue-600 dark:text-blue-400"></i> {# Icon for settings #}
+            <i class="fas fa-cogs mr-3 text-blue-600 dark:text-blue-400"></i> 
             {% if es_superuser %}
                 Configuración Global de Caddy
             {% else %}
@@ -23,11 +25,11 @@
             {% endif %}
         </p>
 
-        <form method="POST" class="space-y-6"> {# Add space-y for consistent margins #}
+        <form method="POST" class="space-y-6"> 
             {% csrf_token %}
-            <label for="caddy-config" class="block text-sm font-medium text-gray-700 dark:text-gray-300 sr-only">Contenido de la configuración de Caddy</label> {# Added label for accessibility #}
+            <label for="caddy-config" class="block text-sm font-medium text-gray-700 dark:text-gray-300 sr-only">Contenido de la configuración de Caddy</label> 
             <textarea
-                id="caddy-config" {# Added ID for label association #}
+                id="caddy-config" 
                 name="config"
                 class="w-full h-96 p-4 rounded-lg bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm font-mono text-gray-900 dark:text-green-300 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
                 {% if not es_superuser %}readonly{% endif %}

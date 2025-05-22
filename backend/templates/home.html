@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% load static %}
 
-{% block title %}Panel de control - CloudGuardian{% endblock %} {# Título más descriptivo #}
+{% block title %}Panel de control - CloudGuardian{% endblock %} 
 
 {% block content %}
 <div class="max-w-7xl mx-auto px-4 py-8 animate-fade-in"> {# Mayor ancho y animación #}
@@ -16,10 +17,9 @@
     </p>
 
     {# Grid responsiva para las tarjetas de funcionalidad #}
-    {# Se adapta de 1 columna a 2 en 'sm', 3 en 'lg' y 4 en 'xl', con más espacio entre ellas #}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"> {# Aumento del gap #}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8"> 
 
-        {# Tarjeta: IP del Servidor (Nueva) - Diseño más prominente #}
+        {# Tarjeta: IP del Servidor (Nueva) 
         {% if server_ip %}
         <div class="relative rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
                     bg-gradient-to-br from-indigo-600 to-purple-700 text-white 
@@ -39,7 +39,7 @@
         </div>
         {% endif %}
 
-        {# Tarjeta: Configuración (Condicional para Superusuarios) - Estilo mejorado #}
+        {# Tarjeta: Configuración (Condicional para Superusuarios) 
         {% if user.is_superuser %}
         <a href="{% url 'configuracion' %}"
             class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
@@ -54,8 +54,7 @@
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
                 Modifica directamente el JSON de configuración global de Caddy. Requiere precaución.
             </p>
-            {# Puedes añadir un conteo si obtienes el tamaño del JSON o número de rutas base #}
-            {# <p class="mt-auto text-lg font-bold text-gray-500 dark:text-gray-300"> (X KB) </p> #}
+            
             <div class="mt-auto text-blue-600 dark:text-blue-400 font-semibold flex items-center">
                 Acceder <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
             </div>
@@ -180,8 +179,8 @@
         </a>
         {% endif %}
 
-    </div> {# Fin del grid #}
-</div> {# Fin del contenedor principal #}
+    </div> 
+</div> 
 
 {# Modal de bienvenida/tour al primer inicio de sesión (Opcional, para un toque extra) #}
 {% if show_welcome_modal %}

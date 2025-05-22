@@ -1,6 +1,8 @@
 
 {% extends "base.html" %}
 
+{% load static %}
+
 {% block title %}Gestionar Destinos Externos{% endblock %} 
 
 {% block content %}
@@ -34,37 +36,37 @@
                     </tr>
                 </thead>
                 <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {% for d in destinos %}
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-150 ease-in-out">
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{{ d.alias }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{{ d.host }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
-                            {% if d.puerto %}{{ d.puerto }}{% else %}-{% endif %} 
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                            <a href="{{ d.url }}" target="_blank" rel="noopener noreferrer" class="font-mono">{{ d.url }}</a> 
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <form method="post" class="inline-block">
-                                {% csrf_token %}
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="alias_del" value="{{ d.alias }}">
-                                <button type="submit"
-                                        class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                                    <i class="fas fa-trash-alt mr-1"></i> Eliminar
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                {% empty %}
-                    <tr>
-                        <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-                            <i class="fas fa-info-circle text-2xl mb-2"></i>
-                            <p>No hay destinos externos configurados actualmente.</p>
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
+                    {% for d in destinos %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-150 ease-in-out">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{{ d.alias }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{{ d.host }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                                {% if d.port %}{{ d.port }}{% else %}-{% endif %} 
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                                <a href="{{ d.target_url }}" target="_blank" rel="noopener noreferrer" class="font-mono">{{ d.target_url }}</a> 
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <form method="post" class="inline-block">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="alias" value="{{ d.alias }}">
+                                    <button type="submit"
+                                            class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                                        <i class="fas fa-trash-alt mr-1"></i> Eliminar
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                                <i class="fas fa-info-circle text-2xl mb-2"></i>
+                                <p>No hay destinos externos configurados actualmente.</p>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
             </table>
         </div>
 

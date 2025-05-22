@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+
 # ── estándar ───────────────────────────────────────────────────
 import ipaddress
 import os
@@ -32,11 +33,12 @@ from .utils import (
     construir_configuracion_global, 
     get_public_ip_address, 
     dial_permitido, 
-    _ip_valida, # Renombrada de _ip_valida
     _is_valid_domain,     # Nueva función
     _is_valid_target_url, # Nueva función
     CaddyAPIError
 )
+
+from .forms import IpBlockingForm 
 
 """ API REST FRAMEWORK IMPORTS """
 # Importaciones para vistas basadas en API (aunque las vistas proporcionadas son clásicas, las mantenemos por si las usas en otras partes)
@@ -606,6 +608,7 @@ def ips_bloqueadas(request):
     """
     logger.debug(f"Usuario '{request.user.username}' accediendo a IPs bloqueadas.")
 
+    user_cfg_obj = None # Inicializa para el bloque try/except
     try:
         user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
         if created or not user_cfg_obj.json_data:
@@ -613,8 +616,8 @@ def ips_bloqueadas(request):
                 logger.info(f"UserJSON creado automáticamente para '{request.user.username}' en ips_bloqueadas.")
             else:
                 logger.warning(f"UserJSON de '{request.user.username}' sin datos, inicializando en ips_bloqueadas.")
-
-            # Inicializar con la estructura completa de Caddy para el usuario, incluyendo puertos de settings
+            
+            # Inicializar con la estructura completa de Caddy para el usuario
             user_cfg_obj.json_data = {
                 "apps": {
                     "http": {
@@ -631,11 +634,10 @@ def ips_bloqueadas(request):
             logger.debug(f"Inicializado json_data para '{request.user.username}' en ips_bloqueadas.")
 
     except Exception as e:
-        # Captura errores al obtener/crear el UserJSON.
         messages.error(request, f"Error al cargar la configuración del usuario: {e}")
         logger.exception(f"Error al obtener/crear UserJSON para '{request.user.username}' en ips_bloqueadas.")
         return redirect("home") # Redirigir a home en caso de error crítico
-    
+
     # Obtener una referencia mutable a las rutas del usuario
     user_routes = user_cfg_obj.json_data \
                     .setdefault("apps", {}) \
@@ -644,7 +646,7 @@ def ips_bloqueadas(request):
                     .setdefault(settings.SERVIDOR_CADDY, {}) \
                     .setdefault("routes", [])
                     
-    # Encontrar la ruta de bloqueo de IP existente para este usuario, si la hay
+    # Encontrar la ruta de bloqueo de IP existente para este usuario
     ip_block_route = next((
         r for r in user_routes
         if any(p.startswith(f"/{request.user.username}/") for m in r.get("match", []) for p in m.get("path", []))
@@ -655,55 +657,56 @@ def ips_bloqueadas(request):
 
     current_blocked_ips = []
     if ip_block_route:
-        # Extraer las IPs bloqueadas existentes, filtrando cualquier formato inválido
+        # Extraer las IPs bloqueadas existentes
         current_blocked_ips = [
             ip for m in ip_block_route.get("match", [])
             for ip in m.get("remote_ip", {}).get("ranges", [])
-            if _ip_valida(ip)
+            # La validación ya no es necesaria aquí si asumimos que las IPs en DB son válidas
+            # o si el validador de formulario garantiza que solo se guarden válidas.
+            # if _ip_valida(ip) # Si la función _ip_valida no está definida globalmente, elimínala
         ]
     logger.debug(f"IPs bloqueadas existentes para '{request.user.username}': {current_blocked_ips}")
 
     # --- Manejar peticiones POST (Añadir/Eliminar IPs) ---
     if request.method == "POST":
-        action = request.POST.get("action")
-        ip_input = request.POST.get("ip_value", "").strip() # Usar un único campo de entrada para la IP
+        form = IpBlockingForm(request.POST) # ¡Instancia el formulario con los datos POST!
+        logger.debug(f"Petición POST recibida en ips_bloqueadas. Datos POST: {request.POST}")
+        
+        if form.is_valid():
+            logger.debug("Formulario de IP bloqueada es válido.")
+            ip_input = form.cleaned_data['ip_address']
+            action = form.cleaned_data['action'] # Obtener la acción del campo oculto
 
-        logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en IPs bloqueadas con valor: '{ip_input}'.")
+            logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en IPs bloqueadas con valor: '{ip_input}'.")
 
-        if not ip_input:
-            messages.warning(request, "Por favor, introduce una dirección IP o rango CIDR.")
-            
-        elif not _ip_valida(ip_input):
-            messages.error(f"'{ip_input}' no es una dirección IP o rango CIDR válida.")
-            
-        else:
             if action == "add":
                 if ip_input in current_blocked_ips:
-                    messages.info(f"La IP/CIDR {ip_input} ya está bloqueada.")
-                    
+                    messages.info(request, f"La IP/CIDR {ip_input} ya está bloqueada.")
+                    logger.info(f"Intento de añadir IP duplicada '{ip_input}' por usuario '{request.user.username}'.")
                 else:
                     current_blocked_ips.append(ip_input)
-                    messages.success(f"IP/CIDR {ip_input} añadida a la lista de bloqueo.")
+                    messages.success(request, f"IP/CIDR {ip_input} añadida a la lista de bloqueo.")
                     logger.info(f"Usuario '{request.user.username}' añadió IP/CIDR a la lista de bloqueo: '{ip_input}'.")
                     
             elif action == "delete":
-                if ip_input not in current_blocked_ips:
-                    messages.warning(f"La IP/CIDR {ip_input} no se encontró en la lista de bloqueo.")
-                    
-                else:
+                if ip_input in current_blocked_ips:
                     current_blocked_ips.remove(ip_input)
-                    messages.success(f"IP/CIDR {ip_input} eliminada de la lista de bloqueo.")
+                    messages.success(request, f"IP/CIDR {ip_input} eliminada de la lista de bloqueo.")
                     logger.info(f"Usuario '{request.user.username}' eliminó IP/CIDR de la lista de bloqueo: '{ip_input}'.")
+                else:
+                    messages.warning(request, f"La IP/CIDR {ip_input} no se encontró en la lista de bloqueo.")
+                    logger.warning(f"Intento de eliminar IP no existente '{ip_input}' por usuario '{request.user.username}'.")
             else:
-                messages.error("Acción solicitada inválida.")
+                messages.error(request, "Acción solicitada inválida.")
                 logger.warning(f"Usuario '{request.user.username}' envió acción inválida '{action}'.")
-
+        
+            # Lógica para actualizar el JSON en la DB y recargar Caddy
             # Actualizar/eliminar la ruta de bloqueo de IP de Caddy basándose en la lista `current_blocked_ips` modificada
             if current_blocked_ips: # Si hay IPs para bloquear, asegurarse de que la ruta exista y esté actualizada
                 new_ip_block_route_definition = {
                     "match": [{
                         "path": [f"/{request.user.username}/*"],
-                        "remote_ip": {"ranges": current_blocked_ips}
+                        "remote_ip": {"ranges": sorted(list(set(current_blocked_ips)))} # Asegura unicidad y ordena
                     }],
                     "handle": [{
                         "handler": "static_response",
@@ -711,31 +714,32 @@ def ips_bloqueadas(request):
                         "body": "IP bloqueada por Cloud Guardian"
                     }]
                 }
-                if ip_block_route: 
-                    # Encontrar el índice y reemplazar para mantener el orden, o añadir si no se encuentra (no debería pasar)
-                    try:
-                        idx = user_routes.index(ip_block_route)
-                        user_routes[idx] = new_ip_block_route_definition
-                        logger.debug(f"Ruta de bloqueo de IP existente actualizada para '{request.user.username}'.")
-                        
-                    except ValueError:
-                        user_routes.insert(0, new_ip_block_route_definition) # Fallback: añadir al principio
-                        logger.error(f"Ruta de bloqueo de IP no encontrada para reemplazo, añadiendo como nueva para '{request.user.username}'.")
-                        
-                else: # Si la ruta no existía, añadirla
+                # Buscar y actualizar o añadir la ruta de bloqueo de IP
+                found_route_idx = -1
+                for i, r in enumerate(user_routes):
+                    if any(p.startswith(f"/{request.user.username}/") for m in r.get("match", []) for p in m.get("path", [])) \
+                       and any("remote_ip" in m for m in r.get("match", [])):
+                        found_route_idx = i
+                        break
+                
+                if found_route_idx != -1: 
+                    user_routes[found_route_idx] = new_ip_block_route_definition
+                    logger.debug(f"Ruta de bloqueo de IP existente actualizada para '{request.user.username}'.")
+                else: 
                     user_routes.insert(0, new_ip_block_route_definition) # Añadir al principio para precedencia
                     logger.debug(f"Nueva ruta de bloqueo de IP creada para '{request.user.username}'.")
-                    
+            
             elif ip_block_route: # Si no hay IPs para bloquear y la ruta existía, eliminarla
                 user_routes.remove(ip_block_route)
                 logger.debug(f"Ruta de bloqueo de IP eliminada para '{request.user.username}' (no hay IPs que bloquear).")
 
-            # Guardar el UserJSON actualizado y disparar la recarga de Caddy
+            # Guardar el UserJSON actualizado
             try:
                 user_cfg_obj.json_data = user_cfg_obj.json_data # Asegurar que los cambios están listos para guardar
                 user_cfg_obj.save()
                 logger.info(f"Configuración de IPs bloqueadas guardada en DB para el usuario '{request.user.username}'.")
 
+                # Disparar la recarga de Caddy
                 ok, msg = construir_configuracion_global(iniciado_por=f"User IP block update by {request.user.username}")
                 (messages.success if ok else messages.error)(
                     request,
@@ -748,17 +752,25 @@ def ips_bloqueadas(request):
                 logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (ips_bloqueadas POST).")
             
             return redirect("ips_bloqueadas") # Redirigir para evitar reenvío de formulario
+        else: # Formulario no válido
+            logger.warning(f"Formulario de IP bloqueada NO válido. Errores: {form.errors}")
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"Error en el campo '{field}': {error}")
+            # Si el formulario no es válido, no redirigimos, mostramos la página con los errores
+            # para que el usuario pueda corregirlos.
+    else: # GET request
+        form = IpBlockingForm() # Crea un formulario vacío para el GET
 
-    # Renderizar la página (para peticiones GET o después del procesamiento POST)
-    # Asegurarse de que solo se pasen IPs válidas a la plantilla para mostrar
-    display_ips = [ip for ip in current_blocked_ips if _ip_valida(ip)]
+    # Renderizar la página (para peticiones GET o después del procesamiento POST si el formulario es inválido)
+    display_ips = sorted(list(set(current_blocked_ips))) # Asegura unicidad y ordena para mostrar
     logger.debug(f"Renderizando página de IPs bloqueadas para '{request.user.username}' con IPs: {display_ips}")
 
-    return render(
-        request,
-        "ips_bloqueadas.html",
-        {"deny_ips": display_ips}
-    )
+    context = {
+        'form': form,
+        'deny_ips': display_ips, # Cambié el nombre de 'ips_bloqueadas' a 'deny_ips' para que coincida con tu template
+    }
+    return render(request, "ips_bloqueadas.html", context) 
 
 
 
@@ -1046,12 +1058,13 @@ def destinos_externos(request):
             user_cfg_obj.save()
             logger.debug(f"Inicializado json_data para '{request.user.username}' en destinos_externos.")
 
+        # Asegurarse de que la ruta exista y sea mutable
         user_routes = user_cfg_obj.json_data \
-                        .setdefault("apps", {}) \
-                        .setdefault("http", {}) \
-                        .setdefault("servers", {}) \
-                        .setdefault(settings.SERVIDOR_CADDY, {}) \
-                        .setdefault("routes", [])
+                            .setdefault("apps", {}) \
+                            .setdefault("http", {}) \
+                            .setdefault("servers", {}) \
+                            .setdefault(settings.SERVIDOR_CADDY, {}) \
+                            .setdefault("routes", [])
 
     except Exception as e:
         messages.error(request, f"Error al cargar la configuración del usuario: {e}")
@@ -1092,20 +1105,38 @@ def destinos_externos(request):
         alias_caddy = full_path_caddy.split(f"/{request.user.username}/", 1)[1].rstrip("/*")
         target_url_caddy = upstreams[0]["dial"]
         
-        # Intentar separar host y puerto para la visualización (simple, no para todas las URLs)
+        # Intentar separar host y puerto para la visualización 
         host_display = target_url_caddy
         port_display = ""
-        if "://" in target_url_caddy: # Eliminar esquema para el split de host/port
-            temp_url = target_url_caddy.split("://", 1)[1]
-        else:
-            temp_url = target_url_caddy
-
-        if ":" in temp_url:
-            host_port_split = temp_url.rsplit(":", 1)
-            if len(host_port_split) == 2 and host_port_split[1].isdigit(): # Asegurarse que lo que sigue al : es un puerto
-                host_display, port_display = host_port_split
-            # else: caso de IPv6 sin [] o rutas complejas, se mantiene como un todo
         
+        # Parsear la URL de destino para host y puerto si es posible
+        parsed_url = None
+        try:
+            # Primero intentar como una URL completa
+            parsed_url = urlparse(target_url_caddy)
+            if parsed_url.hostname:
+                host_display = parsed_url.hostname
+                if parsed_url.port:
+                    port_display = str(parsed_url.port)
+                else: # Si no hay puerto, intentar default
+                    if parsed_url.scheme == 'http':
+                        port_display = '80'
+                    elif parsed_url.scheme == 'https':
+                        port_display = '443'
+        except ValueError:
+            pass # No es una URL bien formada, intentar como IP:Puerto
+
+        if not parsed_url or not parsed_url.hostname: # Si no se parseó como URL o no tiene hostname, intentar como IP:Puerto
+            if ":" in target_url_caddy:
+                temp_parts = target_url_caddy.rsplit(":", 1)
+                if len(temp_parts) == 2 and temp_parts[1].isdigit():
+                    try:
+                        ipaddress.ip_address(temp_parts[0]) 
+                        host_display = temp_parts[0]
+                        port_display = temp_parts[1]
+                    except ValueError:
+                        pass 
+            
         destinos_para_template.append({
             "alias": alias_caddy,
             "target_url": target_url_caddy,
@@ -1113,11 +1144,11 @@ def destinos_externos(request):
             "port": port_display
         })
 
-    # --- Procesamiento de Peticiones POST (Añadir/Eliminar Destinos) ---
+    #  Procesamiento de Peticiones POST 
     if request.method == "POST":
         action = request.POST.get("action")
         alias_input = request.POST.get("alias", "").strip()
-        target_url_input = request.POST.get("target_url", "").strip()
+        target_url_input = request.POST.get("url", "").strip() 
 
         logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en destinos externos (Alias: '{alias_input}', Destino: '{target_url_input}').")
 
@@ -1125,10 +1156,10 @@ def destinos_externos(request):
         if action == "add":
             if not alias_input or not target_url_input:
                 messages.warning(request, "Debes introducir tanto un alias como una URL/IP de destino.")
-            elif not re.match(r"^[a-zA-Z0-9_-]+$", alias_input): # Validación básica del alias (alfanumérico, guiones)
+            elif not re.match(r"^[a-zA-Z0-9_-]+$", alias_input): # Validación básica del alias
                 messages.error(request, "El alias solo puede contener letras, números, guiones y guiones bajos.")
             elif not _is_valid_target_url(target_url_input):
-                messages.error(request, f"La URL/IP de destino '{target_url_input}' no es un formato válido.")
+                messages.error(request, f"La URL/IP de destino '{target_url_input}' no es un formato válido. Ejemplos válidos: http://ejemplo.com, 192.168.1.1:8080, api.dominio.es")
             else:
                 # Validar si el alias ya existe en las rutas de destino externo del usuario
                 alias_already_exists = any(d.get("alias") == alias_input for d in destinos_para_template)
@@ -1163,12 +1194,14 @@ def destinos_externos(request):
                         logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (destinos_externos add).")
 
         elif action == "delete":
-            if not alias_input:
+            # Para la acción de eliminar, el alias viene directamente del botón de la tabla
+            # en un campo oculto llamado 'alias'.
+            if not alias_input: # 'alias_input' es el 'alias' del campo oculto de la tabla
                 messages.warning(request, "Debes introducir el alias a eliminar.")
             else:
                 route_found_and_removed = False
                 # Usamos una lista de copia para iterar y modificamos la original
-                for r in list(user_routes): 
+                for r in list(user_routes):
                     matchers = r.get("match", [])
                     if matchers and matchers[0].get("path"):
                         current_path = matchers[0]["path"][0]
@@ -1204,8 +1237,7 @@ def destinos_externos(request):
 
     # --- Renderizar la Página ---
     logger.debug(f"Renderizando página de destinos externos para '{request.user.username}' con {len(destinos_para_template)} destinos.")
-    return render(request, "destinos_externos.html", {
-        "destinos": destinos_para_template
+    return render(request, "destinos_externos.html", { "destinos": destinos_para_template
     })
 
 
