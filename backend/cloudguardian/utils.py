@@ -17,6 +17,67 @@ class CaddyAPIError(Exception):
     """Excepción base para errores relacionados con la API de administración de Caddy."""
     pass
 
+# --- NUEVAS FUNCIONES DE CONTEO PARA HOME_VIEW ---
+
+def get_user_caddy_routes(user_json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extrae las rutas de Caddy de la configuración JSON de un usuario."""
+    # Asegúrate de que settings.SERVIDOR_CADDY esté correctamente definido
+    return user_json_data \
+        .get("apps", {}) \
+        .get("http", {}) \
+        .get("servers", {}) \
+        .get(settings.SERVIDOR_CADDY, {}) \
+        .get("routes", [])
+
+def count_ip_blocks(user_json_data: Dict[str, Any]) -> int:
+    """Cuenta las rutas de bloqueo de IP en la configuración de un usuario."""
+    count = 0
+    routes = get_user_caddy_routes(user_json_data)
+    for route in routes:
+        matchers = route.get("match", [])
+        handle = route.get("handle", [])
+        # Un bloqueo de IP típicamente tiene un matcher 'remote_ip' y un handler 'static_response' con status 403
+        if any("remote_ip" in m for m in matchers) and \
+            any(h.get("handler") == "static_response" and h.get("status_code") == 403 for h in handle):
+            count += 1
+    return count
+
+def count_external_destinations(user_json_data: Dict[str, Any]) -> int:
+    """Cuenta los destinos externos (reverse proxy) en la configuración de un usuario."""
+    count = 0
+    routes = get_user_caddy_routes(user_json_data)
+    for route in routes:
+        handle = route.get("handle", [])
+        # Un destino externo es un reverse_proxy
+        if any(h.get("handler") == "reverse_proxy" and h.get("upstreams") for h in handle):
+            count += 1
+    return count
+
+def count_domain_proxies(user_json_data: Dict[str, Any]) -> int:
+    """Cuenta los dominios proxy (reverse proxy con matcher de host) en la configuración de un usuario."""
+    count = 0
+    routes = get_user_caddy_routes(user_json_data)
+    for route in routes:
+        matchers = route.get("match", [])
+        handle = route.get("handle", [])
+        is_reverse_proxy = any(h.get("handler") == "reverse_proxy" for h in handle)
+        # Si es un reverse proxy y tiene un matcher de 'host' (es decir, un dominio específico)
+        if is_reverse_proxy and any("host" in m for m in matchers):
+            count += 1
+    return count
+
+def count_user_specific_paths(user_json_data: Dict[str, Any], username: str) -> int:
+    """Cuenta las rutas con paths específicos de usuario (ej. /<username>/...)."""
+    count = 0
+    routes = get_user_caddy_routes(user_json_data)
+    for route in routes:
+        matchers = route.get("match", [])
+        for matcher_group in matchers:
+            paths = matcher_group.get("path", [])
+            if any(p.startswith(f"/{username}/") for p in paths):
+                count += 1
+                break # Solo contamos una vez por ruta si ya encontramos un path de usuario
+    return count
 
 # --- Funciones de Utilidad ---
 #  VALIDACIÓN DE HOST + PUERTO  (se usa en destinos_externos)
@@ -62,7 +123,7 @@ def _is_valid_domain(domain_str: str) -> bool:
     return bool(re.match(r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$", domain_str))
 
 
-# VALIDACIÓN DE URL DE DESTINO (NUEVO - Reusado de destinos_externos)
+# VALIDACIÓN DE URL DE DESTINO 
 def _is_valid_target_url(url: str) -> bool:
     """
     Valida si una cadena es una URL de destino válida para Caddy.
@@ -81,7 +142,7 @@ def _is_valid_target_url(url: str) -> bool:
     return False
 
 
-# Función para obtener la IP pública (puedes moverla a utils.py)
+# Función para obtener la IP pública 
 def get_public_ip_address() -> str:
     """Intenta obtener la IP pública del servidor usando un servicio externo."""
     try:

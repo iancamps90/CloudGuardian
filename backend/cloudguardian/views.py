@@ -36,7 +36,11 @@ from .utils import (
     dial_permitido, 
     _is_valid_domain,    
     _is_valid_target_url, 
-    CaddyAPIError
+    CaddyAPIError,
+    count_ip_blocks, 
+    count_external_destinations,
+    count_domain_proxies, 
+    count_user_specific_paths
 )
 
 from .forms import IpBlockingForm 
@@ -117,6 +121,8 @@ def home_view(request):
         try:
             user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
             
+            should_rebuild_caddy_global = False
+            
             if created:
                 logger.info(f"UserJSON creado automáticamente para '{request.user.username}' (en home_view).")
                 # Inicializar la estructura base de Caddy para un nuevo UserJSON
@@ -134,53 +140,48 @@ def home_view(request):
                     }
                 }
                 user_cfg_obj.save()
+                should_rebuild_caddy_global = True # Un nuevo usuario requiere reconstruir la configuración global
             else:
                 # Asegurarse de que la estructura básica de Caddy exista si UserJSON ya existía pero no estaba completo
                 # Esto maneja casos de UserJSONs antiguos o malformados.
-                # No guardamos si no hay cambios, solo aseguramos la estructura para evitar errores al accederla.
-                user_cfg_obj.json_data.setdefault("apps", {}) \
-                                    .setdefault("http", {}) \
-                                    .setdefault("servers", {}) \
-                                    .setdefault(settings.SERVIDOR_CADDY, {"listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"], "routes": []})
-                # No es necesario user_cfg_obj.save() aquí a menos que realmente se modifique json_data
-                # ya que solo estamos "asegurando" la existencia de claves, no reescribiendo la estructura completa.
+                # Solo guardamos si hay cambios reales en la estructura.
+                changed = False
+                if "apps" not in user_cfg_obj.json_data:
+                    user_cfg_obj.json_data["apps"] = {}
+                    changed = True
+                if "http" not in user_cfg_obj.json_data.get("apps", {}): 
+                    user_cfg_obj.json_data.setdefault("apps", {})["http"] = {} # Crear 'apps' si no existe y luego 'http'
+                    changed = True
+                if "servers" not in user_cfg_obj.json_data.get("apps", {}).get("http", {}): 
+                    user_cfg_obj.json_data.setdefault("apps", {}).setdefault("http", {})["servers"] = {} # Crear si no existe
+                    changed = True
+                if settings.SERVIDOR_CADDY not in user_cfg_obj.json_data.get("apps", {}).get("http", {}).get("servers", {}): 
+                    user_cfg_obj.json_data.setdefault("apps", {}).setdefault("http", {}).setdefault("servers", {})[settings.SERVIDOR_CADDY] = {
+                        "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+                        "routes": []
+                    }
+                    changed = True
+                
+                if changed:
+                    user_cfg_obj.save()
+                    should_rebuild_caddy_global = True # Si la estructura fue completada, Caddy necesita ser recargado
 
-            # La variable `data` ahora es `user_cfg_obj.json_data`
+            # Si se creó un nuevo usuario o se completó la estructura, reconstruir Caddy globalmente
+            if should_rebuild_caddy_global:
+                ok, msg = construir_configuracion_global(iniciado_por=f"UserJSON init/struct complete for {request.user.username}")
+                if not ok:
+                    messages.warning(request, f"Advertencia: No se pudo recargar Caddy después de inicializar/completar tu configuración: {msg}")
+
+
+            # La variable `user_caddy_data` ahora es `user_cfg_obj.json_data`
             user_caddy_data = user_cfg_obj.json_data
 
-            # --- Obtener Conteos para las Tarjetas Resumen analizando las rutas de Caddy ---
-            domain_proxy_count = 0
-            ip_block_count = 0
-            external_destination_count = 0
+            #  Obtener Conteos para las Tarjetas 
+            domain_proxy_count = count_domain_proxies(user_caddy_data)
+            ip_block_count = count_ip_blocks(user_caddy_data)
+            external_destination_count = count_external_destinations(user_caddy_data)
+            protected_routes_count = count_user_specific_paths(user_caddy_data, request.user.username) 
 
-            # Accede a las rutas de Caddy del usuario de forma segura
-            routes = user_caddy_data.get("apps", {}).get("http", {}).get("servers", {}).get(settings.SERVIDOR_CADDY, {}).get("routes", [])
-
-            # Itera sobre las rutas para contar los diferentes tipos
-            for route in routes:
-                matchers = route.get("match", [])
-                handle = route.get("handle", [])
-
-                # Para que una ruta sea considerada "del usuario", debe empezar con su nombre de usuario
-                is_user_route = False
-                for matcher_group in matchers:
-                    paths = matcher_group.get("path", [])
-                    if any(p.startswith(f"/{request.user.username}/") for p in paths):
-                        is_user_route = True
-                        break # Salir del bucle de matchers si ya encontramos una ruta de usuario
-
-                if is_user_route:
-                    # Contar bloqueos de IP
-                    if any("remote_ip" in m and handle and handle[0].get("handler") == "static_response" and handle[0].get("status_code") == 403 and m["remote_ip"].get("ranges") for m in matchers):
-                        ip_block_count += 1
-                    # Contar destinos externos (reverse proxy)
-                    elif any(h.get("handler") == "reverse_proxy" and h.get("upstreams") for h in handle):
-                        external_destination_count += 1
-                    # Contar otros tipos de rutas protegidas o dominios proxy generales
-                    
-                    # Esto es una categoría "catch-all" para rutas de usuario no clasificadas s
-                    else:
-                        domain_proxy_count += 1 
 
             context = {
                 'user': request.user,
@@ -188,17 +189,32 @@ def home_view(request):
                 'domain_proxy_count': domain_proxy_count,
                 'ip_block_count': ip_block_count,
                 'external_destination_count': external_destination_count,
+                'protected_routes_count': protected_routes_count, 
                 'is_superuser': request.user.is_superuser, 
             }
-            logger.debug(f"[{request.user.username}] Renderizando home.html con conteos: IP={ip_block_count}, Destinos={external_destination_count}, Dominios={domain_proxy_count}.")
+            logger.debug(f"[{request.user.username}] Renderizando home.html con conteos: IP={ip_block_count}, Destinos={external_destination_count}, Dominios={domain_proxy_count}, Rutas Protegidas={protected_routes_count}.")
             return render(request, 'home.html', context)
-        
+            
         except Exception as e:
             logger.exception(f"Error CRÍTICO en home_view para '{request.user.username}'.")
             messages.error(request, f"Error al cargar el panel de control: {e}")
             
-            # En caso de error, todavía renderiza la página con la IP y el usuario, pero con un mensaje de error.
-            return render(request, 'home.html', {'user': request.user, 'server_ip': server_ip, 'error_message': "No se pudieron cargar todos los datos."})
+            # IMPORTANTE: Asegurarse de que siempre se devuelve un HttpResponse.
+            # Incluso en caso de error, renderizamos la plantilla con los datos disponibles y un mensaje de error.
+            context_on_error = {
+                'user': request.user, 
+                'server_ip': server_ip, 
+                'error_message': f"No se pudieron cargar todos los datos. Detalle: {e}",
+                'domain_proxy_count': 0, # Valores por defecto en caso de error
+                'ip_block_count': 0,
+                'external_destination_count': 0,
+                'protected_routes_count': 0,
+                'is_superuser': request.user.is_superuser,
+            }
+            return render(request, 'home.html', context_on_error)
+    else:
+        # Esto es más un "fallback" si @login_required fallara por alguna razón,
+        return redirect(settings.LOGIN_URL) # Redirigir al login si no está autenticado
 
 
 """  LOGIN  """
@@ -692,7 +708,7 @@ def ips_bloqueadas(request):
                 found_route_idx = -1
                 for i, r in enumerate(user_routes):
                     if any(p.startswith(f"/{request.user.username}/") for m in r.get("match", []) for p in m.get("path", [])) \
-                       and any("remote_ip" in m for m in r.get("match", [])):
+                        and any("remote_ip" in m for m in r.get("match", [])):
                         found_route_idx = i
                         break
                 
@@ -1418,6 +1434,8 @@ def dominios_proxy_view(request):
     }
     logger.debug(f"Renderizando página de dominios proxy para '{request.user.username}' con {context['domain_proxy_count']} dominios.")
     return render(request, 'dominios_proxy.html', context)
+
+
 
 
 # """ 🔴 API ORIGINAL (Deshabilitada) 🔴 """
