@@ -11,6 +11,7 @@ import re
 from typing import Dict, List, Tuple, Any 
 import logging # Importamos el módulo de logging para rastrear eventos y errores
 from urllib.parse import urlparse
+from .models import UserJSON
 
 """ DJANGO IMPORTS """
 # Importaciones estándar de Django para vistas basadas en función, autenticación, etc.
@@ -52,9 +53,7 @@ from .forms import IpBlockingForm
 # from rest_framework.views import APIView
 # from rest_framework import viewsets
 
-""" MODELOS Y SERIALIZERS IMPORTS """
 # Importamos tus modelos y serializadores personalizados
-from .models import UserJSON # Modelo para almacenar el JSON de configuración de cada usuario
 # from .serializers import UserRegisterSerializer # 
 
 
@@ -114,91 +113,92 @@ def home_view(request):
     # Obtener la IP pública del servidor para mostrarla en el panel
     server_ip = get_public_ip_address() 
 
-    try:
-        user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
-        
-        if created:
-            logger.info(f"UserJSON creado automáticamente para '{request.user.username}' (en home_view).")
-            # Inicializar la estructura base de Caddy para un nuevo UserJSON
-            # Asegura que las claves existan con los puertos de settings.py
-            user_cfg_obj.json_data = {
-                "apps": {
-                    "http": {
-                        "servers": {
-                            settings.SERVIDOR_CADDY: {
-                                "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
-                                "routes": []
+    if request.user.is_authenticated:
+        try:
+            user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
+            
+            if created:
+                logger.info(f"UserJSON creado automáticamente para '{request.user.username}' (en home_view).")
+                # Inicializar la estructura base de Caddy para un nuevo UserJSON
+                # Asegura que las claves existan con los puertos de settings.py
+                user_cfg_obj.json_data = {
+                    "apps": {
+                        "http": {
+                            "servers": {
+                                settings.SERVIDOR_CADDY: {
+                                    "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+                                    "routes": []
+                                }
                             }
                         }
                     }
                 }
+                user_cfg_obj.save()
+            else:
+                # Asegurarse de que la estructura básica de Caddy exista si UserJSON ya existía pero no estaba completo
+                # Esto maneja casos de UserJSONs antiguos o malformados.
+                # No guardamos si no hay cambios, solo aseguramos la estructura para evitar errores al accederla.
+                user_cfg_obj.json_data.setdefault("apps", {}) \
+                                    .setdefault("http", {}) \
+                                    .setdefault("servers", {}) \
+                                    .setdefault(settings.SERVIDOR_CADDY, {"listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"], "routes": []})
+                # No es necesario user_cfg_obj.save() aquí a menos que realmente se modifique json_data
+                # ya que solo estamos "asegurando" la existencia de claves, no reescribiendo la estructura completa.
+
+            # La variable `data` ahora es `user_cfg_obj.json_data`
+            user_caddy_data = user_cfg_obj.json_data
+
+            # --- Obtener Conteos para las Tarjetas Resumen analizando las rutas de Caddy ---
+            domain_proxy_count = 0
+            ip_block_count = 0
+            external_destination_count = 0
+
+            # Accede a las rutas de Caddy del usuario de forma segura
+            routes = user_caddy_data.get("apps", {}).get("http", {}).get("servers", {}).get(settings.SERVIDOR_CADDY, {}).get("routes", [])
+
+            # Itera sobre las rutas para contar los diferentes tipos
+            for route in routes:
+                matchers = route.get("match", [])
+                handle = route.get("handle", [])
+
+                # Para que una ruta sea considerada "del usuario", debe empezar con su nombre de usuario
+                is_user_route = False
+                for matcher_group in matchers:
+                    paths = matcher_group.get("path", [])
+                    if any(p.startswith(f"/{request.user.username}/") for p in paths):
+                        is_user_route = True
+                        break # Salir del bucle de matchers si ya encontramos una ruta de usuario
+
+                if is_user_route:
+                    # Contar bloqueos de IP
+                    if any("remote_ip" in m and handle and handle[0].get("handler") == "static_response" and handle[0].get("status_code") == 403 and m["remote_ip"].get("ranges") for m in matchers):
+                        ip_block_count += 1
+                    # Contar destinos externos (reverse proxy)
+                    elif any(h.get("handler") == "reverse_proxy" and h.get("upstreams") for h in handle):
+                        external_destination_count += 1
+                    # Contar otros tipos de rutas protegidas o dominios proxy generales
+                    
+                    # Esto es una categoría "catch-all" para rutas de usuario no clasificadas s
+                    else:
+                        domain_proxy_count += 1 
+
+            context = {
+                'user': request.user,
+                'server_ip': server_ip,
+                'domain_proxy_count': domain_proxy_count,
+                'ip_block_count': ip_block_count,
+                'external_destination_count': external_destination_count,
+                'is_superuser': request.user.is_superuser, 
             }
-            user_cfg_obj.save()
-        else:
-            # Asegurarse de que la estructura básica de Caddy exista si UserJSON ya existía pero no estaba completo
-            # Esto maneja casos de UserJSONs antiguos o malformados.
-            # No guardamos si no hay cambios, solo aseguramos la estructura para evitar errores al accederla.
-            user_cfg_obj.json_data.setdefault("apps", {}) \
-                                .setdefault("http", {}) \
-                                .setdefault("servers", {}) \
-                                .setdefault(settings.SERVIDOR_CADDY, {"listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"], "routes": []})
-            # No es necesario user_cfg_obj.save() aquí a menos que realmente se modifique json_data
-            # ya que solo estamos "asegurando" la existencia de claves, no reescribiendo la estructura completa.
-
-        # La variable `data` ahora es `user_cfg_obj.json_data`
-        user_caddy_data = user_cfg_obj.json_data
-
-        # --- Obtener Conteos para las Tarjetas Resumen analizando las rutas de Caddy ---
-        domain_proxy_count = 0
-        ip_block_count = 0
-        external_destination_count = 0
-
-        # Accede a las rutas de Caddy del usuario de forma segura
-        routes = user_caddy_data.get("apps", {}).get("http", {}).get("servers", {}).get(settings.SERVIDOR_CADDY, {}).get("routes", [])
-
-        # Itera sobre las rutas para contar los diferentes tipos
-        for route in routes:
-            matchers = route.get("match", [])
-            handle = route.get("handle", [])
-
-            # Para que una ruta sea considerada "del usuario", debe empezar con su nombre de usuario
-            is_user_route = False
-            for matcher_group in matchers:
-                paths = matcher_group.get("path", [])
-                if any(p.startswith(f"/{request.user.username}/") for p in paths):
-                    is_user_route = True
-                    break # Salir del bucle de matchers si ya encontramos una ruta de usuario
-
-            if is_user_route:
-                # Contar bloqueos de IP
-                if any("remote_ip" in m and handle and handle[0].get("handler") == "static_response" and handle[0].get("status_code") == 403 and m["remote_ip"].get("ranges") for m in matchers):
-                    ip_block_count += 1
-                # Contar destinos externos (reverse proxy)
-                elif any(h.get("handler") == "reverse_proxy" and h.get("upstreams") for h in handle):
-                    external_destination_count += 1
-                # Contar otros tipos de rutas protegidas o dominios proxy generales
-                
-                # Esto es una categoría "catch-all" para rutas de usuario no clasificadas s
-                else:
-                    domain_proxy_count += 1 
-
-        context = {
-            'user': request.user,
-            'server_ip': server_ip,
-            'domain_proxy_count': domain_proxy_count,
-            'ip_block_count': ip_block_count,
-            'external_destination_count': external_destination_count,
-            'is_superuser': request.user.is_superuser, 
-        }
-        logger.debug(f"[{request.user.username}] Renderizando home.html con conteos: IP={ip_block_count}, Destinos={external_destination_count}, Dominios={domain_proxy_count}.")
-        return render(request, 'home.html', context)
-    
-    except Exception as e:
-        logger.exception(f"Error CRÍTICO en home_view para '{request.user.username}'.")
-        messages.error(request, f"Error al cargar el panel de control: {e}")
+            logger.debug(f"[{request.user.username}] Renderizando home.html con conteos: IP={ip_block_count}, Destinos={external_destination_count}, Dominios={domain_proxy_count}.")
+            return render(request, 'home.html', context)
         
-        # En caso de error, todavía renderiza la página con la IP y el usuario, pero con un mensaje de error.
-        return render(request, 'home.html', {'user': request.user, 'server_ip': server_ip, 'error_message': "No se pudieron cargar todos los datos."})
+        except Exception as e:
+            logger.exception(f"Error CRÍTICO en home_view para '{request.user.username}'.")
+            messages.error(request, f"Error al cargar el panel de control: {e}")
+            
+            # En caso de error, todavía renderiza la página con la IP y el usuario, pero con un mensaje de error.
+            return render(request, 'home.html', {'user': request.user, 'server_ip': server_ip, 'error_message': "No se pudieron cargar todos los datos."})
 
 
 """  LOGIN  """
