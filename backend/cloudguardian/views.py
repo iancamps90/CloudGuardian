@@ -1379,7 +1379,7 @@ def dominios_proxy_view(request):
                             **({"transport": {"protocol": "http", "tls": {}}} if parsed_url.scheme == "https" else {})
                         }]
                     }
-                    user_routes.append(new_proxy_route) # Añadir a la lista mutable.
+                    user_routes.insert(0, new_proxy_route) # Añadir a la lista mutable.
 
                     try:
                         user_cfg_obj.save() # Guardar los cambios en la BD.
