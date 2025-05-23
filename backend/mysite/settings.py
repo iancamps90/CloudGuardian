@@ -73,7 +73,7 @@ SECRET_KEY = 'django-insecure-0b982cj6p8u6zjsj)-du$i9d@k*9xjh0(0%zo8vtdy$xx-2mn&
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['167.235.155.72', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['.cloud-firewall.eu','cloud-firewall.eu','167.235.155.72', 'localhost', '127.0.0.1']
 
 
 # --- Configuración de Logging ---
