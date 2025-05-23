@@ -1359,11 +1359,24 @@ def dominios_proxy_view(request):
                     logger.info(f"Usuario '{request.user.username}' intentó añadir dominio proxy duplicado: '{domain_input}'.")
                 else:
                     # Construir la nueva ruta de Caddy para el dominio proxy.
+                    from urllib.parse import urlparse
+
+                    # Parseamos la URL para determinar si es HTTPS o HTTP y ajustar la configuración
+                    parsed_url = urlparse(target_url_input)
+
+                    # Determina puerto por defecto basado en el esquema
+                    port = parsed_url.port or (443 if parsed_url.scheme == "https" else 80)
+
+                    # Dial siempre sin esquema (solo dominio/ip + puerto)
+                    dial = f"{parsed_url.hostname}:{port}"
+
+                    # Construcción del proxy según si es HTTPS o HTTP
                     new_proxy_route = {
                         "match": [{"host": [domain_input]}],
                         "handle": [{
                             "handler": "reverse_proxy",
-                            "upstreams": [{"dial": target_url_input}]
+                            "upstreams": [{"dial": dial}],
+                            **({"transport": {"protocol": "http", "tls": {}}} if parsed_url.scheme == "https" else {})
                         }]
                     }
                     user_routes.append(new_proxy_route) # Añadir a la lista mutable.
