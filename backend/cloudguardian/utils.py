@@ -264,6 +264,7 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
     try:
         # CADDY_ADMIN_URL debe apuntar al puerto de administración de Caddy (2019)
         # Asegúrate de que Django pueda alcanzar esta URL.
+        logger.info(f"JSON COMPLETO QUE SE ENVIARÁ A CADDY:\n{json.dumps(cfg, indent=4)}")
         r = requests.post(f"{settings.CADDY_ADMIN_URL}/load", json=cfg, timeout=10)
         r.raise_for_status() # Lanza un error para códigos de estado HTTP 4xx/5xx
 
