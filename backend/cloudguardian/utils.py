@@ -169,7 +169,7 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
     logger.info(pref + "Generando configuración global de Caddy…")
 
     cfg: Dict[str, Any] = {
-        "admin": {"listen": "127.0.0.1:2019"},
+        "admin": {"listen": settings.CADDY_ADMIN_LISTEN_ADDRESS if hasattr(settings, 'CADDY_ADMIN_LISTEN_ADDRESS') else "127.0.0.1:2019"},
         "apps": {
             "http": {
                 "servers": {
