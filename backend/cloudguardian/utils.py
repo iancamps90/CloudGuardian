@@ -173,12 +173,42 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
         "apps": {
             "http": {
                 "servers": {
-                    settings.SERVIDOR_CADDY: {"listen": [":80", ":443"], "routes": []}
+                    settings.SERVIDOR_CADDY: {  # Comienza el diccionario del servidor
+                        "listen": [
+                            f":{settings.CADDY_HTTP_PORT}",
+                            f":{settings.CADDY_HTTPS_PORT}"
+                        ],
+                        "routes": [],  # Inicializa la lista de rutas
+
+                        # Configuración de Logs para este servidor Caddy
+                        "logs": {
+                            "default_logger_name": f"access_logs_{settings.SERVIDOR_CADDY}",
+                            "logger_names": {
+                                f"access_logs_{settings.SERVIDOR_CADDY}": {
+                                    "writer": {
+                                        "output": "file",
+                                        "filename": "/var/log/caddy/cloudguardian_access.log",
+                                        "roll_size": "10mb",
+                                        "roll_keep": 5,
+                                        "roll_keep_for": "720h"
+                                    },
+                                    "encoder": {
+                                        "format": "json"
+                                    },
+                                    "level": "INFO"
+                                }
+                            }
+                        }
+                    }  
                 }
             }
-        },
+        }
     }
+    # Ahora, accedemos a la lista de rutas que ya está definida dentro de cfg
     routes: List[Dict[str, Any]] = cfg["apps"]["http"]["servers"][settings.SERVIDOR_CADDY]["routes"]
+
+
+
 
     # ── /static/ ────────────────────────────────────────────────────
     if settings.STATIC_ROOT and os.path.exists(settings.STATIC_ROOT):
@@ -186,8 +216,9 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
             "match": [{"path": ["/static/*"]}],
             "handle": [{"handler": "file_server", "root": str(settings.STATIC_ROOT)}],
         })
+        logger.info(f"Ruta para archivos estáticos configurada desde {settings.STATIC_ROOT} en {settings.STATIC_URL}")
     else:
-        logger.warning("STATIC_ROOT no encontrado; se omite file_server.")
+        logger.warning(f"STATIC_ROOT ('{settings.STATIC_ROOT}') no encontrado o no configurado; se omite file_server para estáticos.")
 
     # rutas de usuarios
     for uj in UserJSON.objects.all():
