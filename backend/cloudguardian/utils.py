@@ -242,7 +242,9 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
     # settings.DJANGO_APP_DIAL debe ser configurado en settings.py
     django_dial_target = getattr(settings, "DJANGO_APP_DIAL", ":8000") #  puerto 8000
     routes.append({
-        "handle": [{"handler": "reverse_proxy",
+        "match": [{"path": ["/*"]}],
+        "handle": [{
+            "handler": "reverse_proxy",
                     "upstreams": [{"dial": django_dial_target}]
                     }]
     })
