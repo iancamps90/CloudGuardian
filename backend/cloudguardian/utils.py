@@ -230,7 +230,7 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
         
         
         if user_routes:
-            #routes.extend(user_routes)
+            routes.extend(user_routes)
             logger.debug(f"Rutas de Caddy de usuario '{uj.user.username}' añadidas. Total: {len(user_routes)} rutas.")
         else:
             logger.debug(f"No hay rutas de Caddy definidas para el usuario '{uj.user.username}'.")
