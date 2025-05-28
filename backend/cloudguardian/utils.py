@@ -221,19 +221,19 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
         logger.warning(f"STATIC_ROOT ('{settings.STATIC_ROOT}') no encontrado o no configurado; se omite file_server para estáticos.")
 
     # rutas de usuarios
-    #for uj in UserJSON.objects.all():
-        #user_routes = uj.json_data.get("apps", {}) \
-                        #.get("http", {}) \
-                        #.get("servers", {}) \
-                        #.get(settings.SERVIDOR_CADDY, {}) \
-                        #.get("routes", [])
+    for uj in UserJSON.objects.all():
+        user_routes = uj.json_data.get("apps", {}) \
+                        .get("http", {}) \
+                        .get("servers", {}) \
+                        .get(settings.SERVIDOR_CADDY, {}) \
+                        .get("routes", [])
         
         
-        #if user_routes:
+        if user_routes:
             #routes.extend(user_routes)
-            #logger.debug(f"Rutas de Caddy de usuario '{uj.user.username}' añadidas. Total: {len(user_routes)} rutas.")
-        #else:
-            #logger.debug(f"No hay rutas de Caddy definidas para el usuario '{uj.user.username}'.")
+            logger.debug(f"Rutas de Caddy de usuario '{uj.user.username}' añadidas. Total: {len(user_routes)} rutas.")
+        else:
+            logger.debug(f"No hay rutas de Caddy definidas para el usuario '{uj.user.username}'.")
 
 
     # ── Catch-all → Django (Proxy inverso a tu aplicación Django) 
