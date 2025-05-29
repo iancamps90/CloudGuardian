@@ -1,0 +1,210 @@
+{
+  "admin": {
+    "listen": "127.0.0.1:2019"
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "Cloud_Guardian": {
+          "listen": [":80", ":443"],
+          "routes": [
+            {
+              "match": [{ "path": ["/static/*"] }],
+              "handle": [{
+                "handler": "file_server",
+                "root": "/home/despliegue-nube/cloudguardian/backend/staticfiles"
+              }]
+            },
+            {
+              "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{ "dial": "localhost:8000" }]
+              }]
+            },
+            {
+              "match": [{ "path": ["/casa"] }],
+              "handle": [{
+                "handler": "static_response",
+                "body": "Acceso permitido a casa"
+              }]
+            },
+            {
+              "match": [{ "path": ["/trabajo"] }],
+              "handle": [{
+                "handler": "static_response",
+                "body": "Acceso permitido a trabajo"
+              }]
+            },
+            {
+              "match": [{ "path": ["/cano27/github/"] }],
+              "handle": [{
+                "handler": "static_response",
+                "body": "Acceso permitido a /cano27/github/"
+              }]
+            },
+            {
+              "match": [{ "path": ["/cano27/login/"] }],
+              "handle": [{
+                "handler": "static_response",
+                "body": "Acceso permitido a /cano27/login/"
+              }]
+            },
+            {
+              "match": [{ "host": ["midominio.com"] }],
+              "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{ "dial": "www.google.com:443" }],
+                "transport": { "protocol": "http", "tls": {} }
+              }]
+            },
+            {
+              "match": [{
+                "path": ["/ian1990/*"],
+                "remote_ip": { "ranges": ["230.230.125.12", "250.250.150.15"] }
+              }],
+              "handle": [{
+                "handler": "static_response",
+                "status_code": 403,
+                "body": "IP bloqueada por Cloud Guardian"
+              }]
+            },
+            {
+              "match": [{ "path": ["/ian1990/practicas"] }],
+              "handle": [{
+                "handler": "static_response",
+                "body": "Acceso permitido a /ian1990/practicas (Gestionado por Cloud Guardian)"
+              }]
+            },
+            {
+              "match": [{
+                "path": ["/Jose/*"],
+                "remote_ip": { "ranges": ["2.2.2.2", "1.1.1.1"] }
+              }],
+              "handle": [{
+                "handler": "static_response",
+                "status_code": 403,
+                "body": "IP bloqueada por Cloud Guardian"
+              }]
+            },
+            {
+              "match": [{
+                "path": ["/prueba-jaime/*"],
+                "remote_ip": { "ranges": ["167.235.155.72"] }
+              }],
+              "handle": [{
+                "handler": "static_response",
+                "status_code": 403,
+                "body": "IP bloqueada"
+              }]
+            },
+            {
+              "match": [{ "path": ["/prueba-jaime/ruta/"] }],
+              "handle": [{
+                "handler": "static_response",
+                "body": "Acceso permitido a /prueba-jaime/ruta/"
+              }]
+            },
+            {
+              "match": [{ "host": ["hola.cloud-firewall.eu"] }],
+              "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{ "dial": "167.235.155.72:80" }]
+              }]
+            },
+            {
+              "match": [{ "path": ["/prueba-jaime/miholacom/*"] }],
+              "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{ "dial": "mihola.com:80" }]
+              }]
+            },
+            {
+              "match": [{ "host": ["cloud-firewall.eu"] }],
+              "handle": [{
+                "handler": "static_response",
+                "body": "Bienvenido a Cloud Firewall"
+              }]
+            },
+            {
+              "match": [{
+                "path": ["/nube1/*"],
+                "remote_ip": { "ranges": ["125.125.125.72"] }
+              }],
+              "handle": [{
+                "handler": "static_response",
+                "status_code": 403,
+                "body": "IP bloqueada por Cloud Guardian"
+              }]
+            },
+            {
+              "match": [{ "path": ["/nube1/casa"] }],
+              "handle": [{
+                "handler": "static_response",
+                "body": "Acceso permitido a /nube1/casa (Gestionado por Cloud Guardian)"
+              }]
+            },
+            {
+              "match": [{ "path": ["/nube1/mi-server/*"] }],
+              "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{ "dial": "cloud-firewall.eu:80" }]
+              }]
+            },
+            {
+              "match": [{ "host": ["buscador.cloud-firewall.eu"] }],
+              "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{ "dial": "www.google.com:443" }],
+                "transport": { "protocol": "http", "tls": {} }
+              }]
+            },
+            {
+              "match": [{
+                "path": ["/ian1/*"],
+                "remote_ip": { "ranges": ["125.123.125.12"] }
+              }],
+              "handle": [{
+                "handler": "static_response",
+                "status_code": 403,
+                "body": "IP bloqueada por Cloud Guardian"
+              }]
+            },
+            {
+              "match": [{ "path": ["/*"] }],
+              "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{ "dial": ":8000" }]
+              }]
+            },
+            {
+              "match": [{ "host": ["google.cloud-firewall.eu"] }],
+              "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{ "dial": "www.google.com:443" }],
+                "transport": { "protocol": "http", "tls": {} }
+              }]
+            }
+          ],
+          "logs": {
+            "default_logger_name": "access_logs_Cloud_Guardian",
+            "logger_names": {
+              "access_logs_Cloud_Guardian": {
+                "writer": {
+                  "output": "file",
+                  "filename": "/var/log/caddy/cloudguardian_access.log",
+                  "roll_size": "10mb",
+                  "roll_keep": 5,
+                  "roll_keep_for": "720h"
+                },
+                "encoder": {
+                  "format": "json"
+                },
+                "level": "INFO"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

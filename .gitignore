@@ -14,7 +14,7 @@ backend/static/favicon-new.ico
 backend/logs/
 
 # Ignorar archivos de Caddy generados
-/backend/deploy/caddy.json
+# /backend/deploy/caddy.json
 
 
 # Ignorar la carpeta donde collectstatic copia los archivos (¡siempre!)
