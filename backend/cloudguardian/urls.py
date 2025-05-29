@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     home_view, login_view, register_view, logout_view, configuracion, ips_bloqueadas, rutas_protegidas,
-    eliminar_usuario, dominios_proxy_view
+    eliminar_usuario, dominios_proxy_view, subdominios_view
 )
 # importamos las funciones y clases creadas en views
 
@@ -20,6 +20,8 @@ urlpatterns = [
     path('rutas-protegidas/', rutas_protegidas, name='rutas_protegidas'),
     
     path('dominios_proxy/', dominios_proxy_view, name='dominios_proxy_view'),
+    path("subdominios/", subdominios_view, name="subdominios_view"),
+
     
     # URL para eliminar usuario (superuser, template)
     path('eliminar-usuario/', eliminar_usuario, name='eliminar_usuario'),

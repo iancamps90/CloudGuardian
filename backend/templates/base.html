@@ -158,6 +158,12 @@
                     <i class="fa-solid fa-link mr-3 text-lg"></i> Dominios Proxy
                 </a>
 
+                <a href="{% url 'subdominios_view' %}"
+                    class="flex items-center p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors
+                        {% if request.path == '/subdominios/' %}bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold{% endif %}">
+                    <i class="fa-solid fa-link mr-3 text-lg"></i> Subdominios Proxy
+                </a>
+
                 {% if user.is_superuser %}
                 <hr class="border-t border-gray-200 dark:border-gray-700 my-4"> 
                 <a href="{% url 'register' %}"
