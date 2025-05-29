@@ -1142,221 +1142,222 @@ def subdominios_view(request):
     })
 
 
-@login_required # Solo usuarios logueados pueden acceder
-def dominios_proxy_view(request):
-    """
-    Muestra los dominios proxy configurados en Caddy y sus destinos.
-    """
-    logger.debug(f"Usuario '{request.user.username}' accediendo a la vista de dominios proxy.")
+""" DOMINIOS PROXI """
+# @login_required # Solo usuarios logueados pueden acceder
+# def dominios_proxy_view(request):
+#     """
+#     Muestra los dominios proxy configurados en Caddy y sus destinos.
+#     """
+#     logger.debug(f"Usuario '{request.user.username}' accediendo a la vista de dominios proxy.")
 
-    try:
-        # Obtener o crear el objeto UserJSON para el usuario actual.
-        user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
+#     try:
+#         # Obtener o crear el objeto UserJSON para el usuario actual.
+#         user_cfg_obj, created = UserJSON.objects.get_or_create(user=request.user)
 
-        # Si el objeto es nuevo o no tiene datos, inicialízalo con la estructura básica de Caddy.
-        if created or not user_cfg_obj.json_data:
-            if created:
-                logger.info(f"UserJSON creado automáticamente para '{request.user.username}' en dominios_proxy_view.")
-            else:
-                logger.warning(f"UserJSON de '{request.user.username}' estaba vacío, inicializando en dominios_proxy_view.")
+#         # Si el objeto es nuevo o no tiene datos, inicialízalo con la estructura básica de Caddy.
+#         if created or not user_cfg_obj.json_data:
+#             if created:
+#                 logger.info(f"UserJSON creado automáticamente para '{request.user.username}' en dominios_proxy_view.")
+#             else:
+#                 logger.warning(f"UserJSON de '{request.user.username}' estaba vacío, inicializando en dominios_proxy_view.")
 
-            user_cfg_obj.json_data = {
-                "apps": {
-                    "http": {
-                        "servers": {
-                            settings.SERVIDOR_CADDY: {
-                                "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
-                                "routes": []
-                            }
-                        }
-                    }
-                }
-            }
-            user_cfg_obj.save()
-            logger.debug(f"Estructura inicial de Caddy guardada para '{request.user.username}'.")
+#             user_cfg_obj.json_data = {
+#                 "apps": {
+#                     "http": {
+#                         "servers": {
+#                             settings.SERVIDOR_CADDY: {
+#                                 "listen": [f":{settings.CADDY_HTTP_PORT}", f":{settings.CADDY_HTTPS_PORT}"],
+#                                 "routes": []
+#                             }
+#                         }
+#                     }
+#                 }
+#             }
+#             user_cfg_obj.save()
+#             logger.debug(f"Estructura inicial de Caddy guardada para '{request.user.username}'.")
 
-        # Obtener una referencia mutable a las rutas del usuario.
-        # Esto asegura que cualquier cambio hecho en 'routes' se refleje en user_cfg_obj.json_data.
-        user_routes = user_cfg_obj.json_data \
-                        .setdefault("apps", {}) \
-                        .setdefault("http", {}) \
-                        .setdefault("servers", {}) \
-                        .setdefault(settings.SERVIDOR_CADDY, {}) \
-                        .setdefault("routes", [])
+#         # Obtener una referencia mutable a las rutas del usuario.
+#         # Esto asegura que cualquier cambio hecho en 'routes' se refleje en user_cfg_obj.json_data.
+#         user_routes = user_cfg_obj.json_data \
+#                         .setdefault("apps", {}) \
+#                         .setdefault("http", {}) \
+#                         .setdefault("servers", {}) \
+#                         .setdefault(settings.SERVIDOR_CADDY, {}) \
+#                         .setdefault("routes", [])
 
-    except Exception as e:
-        messages.error(request, f"Error al cargar la configuración del usuario: {e}")
-        logger.exception(f"Error crítico al obtener/inicializar UserJSON para '{request.user.username}' en dominios_proxy_view.")
+#     except Exception as e:
+#         messages.error(request, f"Error al cargar la configuración del usuario: {e}")
+#         logger.exception(f"Error crítico al obtener/inicializar UserJSON para '{request.user.username}' en dominios_proxy_view.")
         
-        return redirect("home") # Redirige a home en caso de un error irrecuperable.
+#         return redirect("home") # Redirige a home en caso de un error irrecuperable.
 
-    # Lista para almacenar los dominios proxy que se mostrarán en la plantilla.
-    proxied_domains_for_template = []
+#     # Lista para almacenar los dominios proxy que se mostrarán en la plantilla.
+#     proxied_domains_for_template = []
 
-    # Iterar sobre las rutas del usuario para extraer la información de los dominios proxy.
-    for route in user_routes:
-        hosts = []
-        upstreams = []
-        is_proxy_route = False
+#     # Iterar sobre las rutas del usuario para extraer la información de los dominios proxy.
+#     for route in user_routes:
+#         hosts = []
+#         upstreams = []
+#         is_proxy_route = False
 
-        # Extraer hosts de los matchers.
-        for matcher_group in route.get('match', []):
-            if 'host' in matcher_group and isinstance(matcher_group['host'], list):
-                hosts.extend(matcher_group['host'])
+#         # Extraer hosts de los matchers.
+#         for matcher_group in route.get('match', []):
+#             if 'host' in matcher_group and isinstance(matcher_group['host'], list):
+#                 hosts.extend(matcher_group['host'])
 
-        # Extraer destinos (upstreams) si es una ruta de reverse_proxy.
-        for handler_group in route.get('handle', []):
-            if handler_group.get('handler') == 'reverse_proxy':
-                is_proxy_route = True
-                for upstream in handler_group.get('upstreams', []):
-                    if 'dial' in upstream:
-                        upstreams.append(upstream['dial'])
-                break # Solo necesitamos el primer handler de reverse_proxy.
+#         # Extraer destinos (upstreams) si es una ruta de reverse_proxy.
+#         for handler_group in route.get('handle', []):
+#             if handler_group.get('handler') == 'reverse_proxy':
+#                 is_proxy_route = True
+#                 for upstream in handler_group.get('upstreams', []):
+#                     if 'dial' in upstream:
+#                         upstreams.append(upstream['dial'])
+#                 break # Solo necesitamos el primer handler de reverse_proxy.
 
-        # Si es una ruta de proxy y tiene hosts y destinos, la añadimos a la lista.
-        if is_proxy_route and hosts and upstreams:
-            for host in hosts:
-                # Opcional: intentar separar host y puerto para visualización si el destino es "host:puerto"
-                # Esta lógica ya la teníamos en destinos_externos, la reuso aquí.
-                display_destinations = []
-                for dest in upstreams:
-                    host_part = dest
-                    port_part = ""
-                    if "://" in dest: # Eliminar esquema para el split de host/port
-                        temp_dest = dest.split("://", 1)[1]
-                    else:
-                        temp_dest = dest
+#         # Si es una ruta de proxy y tiene hosts y destinos, la añadimos a la lista.
+#         if is_proxy_route and hosts and upstreams:
+#             for host in hosts:
+#                 # Opcional: intentar separar host y puerto para visualización si el destino es "host:puerto"
+#                 # Esta lógica ya la teníamos en destinos_externos, la reuso aquí.
+#                 display_destinations = []
+#                 for dest in upstreams:
+#                     host_part = dest
+#                     port_part = ""
+#                     if "://" in dest: # Eliminar esquema para el split de host/port
+#                         temp_dest = dest.split("://", 1)[1]
+#                     else:
+#                         temp_dest = dest
 
-                    if ":" in temp_dest:
-                        host_port_split = temp_dest.rsplit(":", 1)
-                        if len(host_port_split) == 2 and host_port_split[1].isdigit():
-                            host_part, port_part = host_port_split
+#                     if ":" in temp_dest:
+#                         host_port_split = temp_dest.rsplit(":", 1)
+#                         if len(host_port_split) == 2 and host_port_split[1].isdigit():
+#                             host_part, port_part = host_port_split
 
-                    display_destinations.append({
-                        "original": dest,
-                        "host_display": host_part,
-                        "port_display": port_part
-                    })
+#                     display_destinations.append({
+#                         "original": dest,
+#                         "host_display": host_part,
+#                         "port_display": port_part
+#                     })
 
-                proxied_domains_for_template.append({
-                    'domain': host,
-                    'destinations_raw': upstreams, # Para referencia interna si se necesita el formato original
-                    'destinations': display_destinations # Para mostrar host/puerto separado
-                })
+#                 proxied_domains_for_template.append({
+#                     'domain': host,
+#                     'destinations_raw': upstreams, # Para referencia interna si se necesita el formato original
+#                     'destinations': display_destinations # Para mostrar host/puerto separado
+#                 })
 
-    # --- Manejo de Peticiones POST (Añadir/Eliminar Dominios Proxy) ---
-    if request.method == "POST":
-        action = request.POST.get("action")
-        domain_input = request.POST.get("domain", "").strip() # El dominio que el usuario quiere añadir/eliminar
-        target_url_input = request.POST.get("target_url", "").strip() # El destino para el dominio
+#     # --- Manejo de Peticiones POST (Añadir/Eliminar Dominios Proxy) ---
+#     if request.method == "POST":
+#         action = request.POST.get("action")
+#         domain_input = request.POST.get("domain", "").strip() # El dominio que el usuario quiere añadir/eliminar
+#         target_url_input = request.POST.get("target_url", "").strip() # El destino para el dominio
 
-        logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en dominios proxy (Dominio: '{domain_input}', Destino: '{target_url_input}').")
+#         logger.info(f"Usuario '{request.user.username}' intentando acción '{action}' en dominios proxy (Dominio: '{domain_input}', Destino: '{target_url_input}').")
 
 
-        if action == "add":
-            if not domain_input or not target_url_input:
-                messages.warning(request, "Debes introducir tanto el dominio como la URL de destino.")
-            elif not _is_valid_domain(domain_input):
-                messages.error(request, f"El dominio '{domain_input}' no es un formato válido.")
-            elif not _is_valid_target_url(target_url_input):
-                messages.error(request, f"La URL de destino '{target_url_input}' no es un formato válido.")
-            else:
-                # Comprobar si el dominio ya está siendo proxied por el usuario.
-                domain_already_proxied = any(d.get("domain") == domain_input for d in proxied_domains_for_template)
+#         if action == "add":
+#             if not domain_input or not target_url_input:
+#                 messages.warning(request, "Debes introducir tanto el dominio como la URL de destino.")
+#             elif not _is_valid_domain(domain_input):
+#                 messages.error(request, f"El dominio '{domain_input}' no es un formato válido.")
+#             elif not _is_valid_target_url(target_url_input):
+#                 messages.error(request, f"La URL de destino '{target_url_input}' no es un formato válido.")
+#             else:
+#                 # Comprobar si el dominio ya está siendo proxied por el usuario.
+#                 domain_already_proxied = any(d.get("domain") == domain_input for d in proxied_domains_for_template)
 
-                if domain_already_proxied:
-                    messages.info(request, f"El dominio '{domain_input}' ya está siendo proxied. Si quieres cambiar su destino, elimínalo y vuelve a añadirlo.")
-                    logger.info(f"Usuario '{request.user.username}' intentó añadir dominio proxy duplicado: '{domain_input}'.")
-                else:
-                    # Construir la nueva ruta de Caddy para el dominio proxy.
-                    from urllib.parse import urlparse
+#                 if domain_already_proxied:
+#                     messages.info(request, f"El dominio '{domain_input}' ya está siendo proxied. Si quieres cambiar su destino, elimínalo y vuelve a añadirlo.")
+#                     logger.info(f"Usuario '{request.user.username}' intentó añadir dominio proxy duplicado: '{domain_input}'.")
+#                 else:
+#                     # Construir la nueva ruta de Caddy para el dominio proxy.
+#                     from urllib.parse import urlparse
 
-                    # Parseamos la URL para determinar si es HTTPS o HTTP y ajustar la configuración
-                    parsed_url = urlparse(target_url_input)
+#                     # Parseamos la URL para determinar si es HTTPS o HTTP y ajustar la configuración
+#                     parsed_url = urlparse(target_url_input)
 
-                    # Determina puerto por defecto basado en el esquema
-                    port = parsed_url.port or (443 if parsed_url.scheme == "https" else 80)
+#                     # Determina puerto por defecto basado en el esquema
+#                     port = parsed_url.port or (443 if parsed_url.scheme == "https" else 80)
 
-                    # Dial siempre sin esquema (solo dominio/ip + puerto)
-                    dial = f"{parsed_url.hostname}:{port}"
+#                     # Dial siempre sin esquema (solo dominio/ip + puerto)
+#                     dial = f"{parsed_url.hostname}:{port}"
 
-                    # Construcción del proxy según si es HTTPS o HTTP
-                    new_proxy_route = {
-                        "match": [{"host": [domain_input]}],
-                        "handle": [{
-                            "handler": "reverse_proxy",
-                            "upstreams": [{"dial": dial}],
-                            **({"transport": {"protocol": "http", "tls": {}}} if parsed_url.scheme == "https" else {})
-                        }]
-                    }
-                    user_routes.insert(0, new_proxy_route) # Añadir a la lista mutable.
+#                     # Construcción del proxy según si es HTTPS o HTTP
+#                     new_proxy_route = {
+#                         "match": [{"host": [domain_input]}],
+#                         "handle": [{
+#                             "handler": "reverse_proxy",
+#                             "upstreams": [{"dial": dial}],
+#                             **({"transport": {"protocol": "http", "tls": {}}} if parsed_url.scheme == "https" else {})
+#                         }]
+#                     }
+#                     user_routes.insert(0, new_proxy_route) # Añadir a la lista mutable.
 
-                    try:
-                        user_cfg_obj.save() # Guardar los cambios en la BD.
-                        logger.info(f"Dominio proxy '{domain_input}' a '{target_url_input}' añadido para '{request.user.username}'.")
+#                     try:
+#                         user_cfg_obj.save() # Guardar los cambios en la BD.
+#                         logger.info(f"Dominio proxy '{domain_input}' a '{target_url_input}' añadido para '{request.user.username}'.")
                         
-                        # Reconstruir y recargar Caddy.
-                        ok, msg = construir_configuracion_global(iniciado_por=f"Add domain proxy by {request.user.username}")
-                        if ok:
-                            messages.success(request, f"Dominio proxy '{domain_input}' configurado y recargado correctamente. {msg}")
-                            logger.info(f"Recarga de Caddy exitosa tras añadir dominio proxy para '{request.user.username}'.")
-                        else:
-                            messages.error(request, f"Dominio proxy '{domain_input}' añadido a la base de datos, pero {msg}")
-                            logger.warning(f"Fallo en la recarga de Caddy tras añadir dominio proxy para '{request.user.username}': {msg}")
-                    except Exception as e:
-                        messages.error(request, f"Error al guardar el dominio proxy: {e}")
-                        logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (add domain proxy).")
+#                         # Reconstruir y recargar Caddy.
+#                         ok, msg = construir_configuracion_global(iniciado_por=f"Add domain proxy by {request.user.username}")
+#                         if ok:
+#                             messages.success(request, f"Dominio proxy '{domain_input}' configurado y recargado correctamente. {msg}")
+#                             logger.info(f"Recarga de Caddy exitosa tras añadir dominio proxy para '{request.user.username}'.")
+#                         else:
+#                             messages.error(request, f"Dominio proxy '{domain_input}' añadido a la base de datos, pero {msg}")
+#                             logger.warning(f"Fallo en la recarga de Caddy tras añadir dominio proxy para '{request.user.username}': {msg}")
+#                     except Exception as e:
+#                         messages.error(request, f"Error al guardar el dominio proxy: {e}")
+#                         logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (add domain proxy).")
 
-        elif action == "delete":
-            if not domain_input:
-                messages.warning(request, "Debes introducir el dominio a eliminar.")
-            else:
-                route_found_and_removed = False
-                # Iterar sobre una copia para poder modificar la lista original.
-                for r in list(user_routes):
-                    hosts_in_route = []
-                    for matcher_group in r.get('match', []):
-                        if 'host' in matcher_group and isinstance(matcher_group['host'], list):
-                            hosts_in_route.extend(matcher_group['host'])
+#         elif action == "delete":
+#             if not domain_input:
+#                 messages.warning(request, "Debes introducir el dominio a eliminar.")
+#             else:
+#                 route_found_and_removed = False
+#                 # Iterar sobre una copia para poder modificar la lista original.
+#                 for r in list(user_routes):
+#                     hosts_in_route = []
+#                     for matcher_group in r.get('match', []):
+#                         if 'host' in matcher_group and isinstance(matcher_group['host'], list):
+#                             hosts_in_route.extend(matcher_group['host'])
                     
-                    # Verificar si este es el dominio que queremos eliminar Y si es un proxy.
-                    if domain_input in hosts_in_route:
-                        for handler_group in r.get('handle', []):
-                            if handler_group.get('handler') == 'reverse_proxy':
-                                user_routes.remove(r) # Eliminar la ruta de la lista.
-                                route_found_and_removed = True
-                                break # Salir después de encontrar y eliminar.
-                    if route_found_and_removed:
-                        break # Salir del bucle principal si ya eliminamos.
+#                     # Verificar si este es el dominio que queremos eliminar Y si es un proxy.
+#                     if domain_input in hosts_in_route:
+#                         for handler_group in r.get('handle', []):
+#                             if handler_group.get('handler') == 'reverse_proxy':
+#                                 user_routes.remove(r) # Eliminar la ruta de la lista.
+#                                 route_found_and_removed = True
+#                                 break # Salir después de encontrar y eliminar.
+#                     if route_found_and_removed:
+#                         break # Salir del bucle principal si ya eliminamos.
 
-                if route_found_and_removed:
-                    try:
-                        user_cfg_obj.save() # Guardar los cambios.
-                        logger.info(f"Dominio proxy '{domain_input}' eliminado para '{request.user.username}'.")
+#                 if route_found_and_removed:
+#                     try:
+#                         user_cfg_obj.save() # Guardar los cambios.
+#                         logger.info(f"Dominio proxy '{domain_input}' eliminado para '{request.user.username}'.")
                         
-                        ok, msg = construir_configuracion_global(iniciado_por=f"Delete domain proxy by {request.user.username}")
-                        if ok:
-                            messages.success(request, f"Dominio proxy '{domain_input}' eliminado y recargado correctamente. {msg}")
-                            logger.info(f"Recarga de Caddy exitosa tras eliminar dominio proxy para '{request.user.username}'.")
-                        else:
-                            messages.error(request, f"Dominio proxy '{domain_input}' eliminado de la base de datos, pero {msg}")
-                            logger.warning(f"Fallo en la recarga de Caddy tras eliminar dominio proxy para '{request.user.username}': {msg}")
-                    except Exception as e:
-                        messages.error(request, f"Error al guardar la eliminación del dominio proxy: {e}")
-                        logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (delete domain proxy).")
-                else:
-                    messages.warning(request, f"El dominio '{domain_input}' no fue encontrado en tus dominios proxy o no corresponde a un proxy gestionado.")
-                    logger.info(f"Usuario '{request.user.username}' intentó eliminar dominio proxy no existente: '{domain_input}'.")
+#                         ok, msg = construir_configuracion_global(iniciado_por=f"Delete domain proxy by {request.user.username}")
+#                         if ok:
+#                             messages.success(request, f"Dominio proxy '{domain_input}' eliminado y recargado correctamente. {msg}")
+#                             logger.info(f"Recarga de Caddy exitosa tras eliminar dominio proxy para '{request.user.username}'.")
+#                         else:
+#                             messages.error(request, f"Dominio proxy '{domain_input}' eliminado de la base de datos, pero {msg}")
+#                             logger.warning(f"Fallo en la recarga de Caddy tras eliminar dominio proxy para '{request.user.username}': {msg}")
+#                     except Exception as e:
+#                         messages.error(request, f"Error al guardar la eliminación del dominio proxy: {e}")
+#                         logger.exception(f"Error al guardar UserJSON o recargar Caddy para '{request.user.username}' (delete domain proxy).")
+#                 else:
+#                     messages.warning(request, f"El dominio '{domain_input}' no fue encontrado en tus dominios proxy o no corresponde a un proxy gestionado.")
+#                     logger.info(f"Usuario '{request.user.username}' intentó eliminar dominio proxy no existente: '{domain_input}'.")
 
-        return redirect("dominios_proxy_view") # Redirigir siempre después de un POST.
+#         return redirect("dominios_proxy_view") # Redirigir siempre después de un POST.
 
-    # --- Renderizar la Página ---
-    context = {
-        'dominios': proxied_domains_for_template,
-        'domain_proxy_count': len(proxied_domains_for_template),
-    }
-    logger.debug(f"Renderizando página de dominios proxy para '{request.user.username}' con {context['domain_proxy_count']} dominios.")
-    return render(request, 'dominios_proxy.html', context)
+#     # --- Renderizar la Página ---
+#     context = {
+#         'dominios': proxied_domains_for_template,
+#         'domain_proxy_count': len(proxied_domains_for_template),
+#     }
+#     logger.debug(f"Renderizando página de dominios proxy para '{request.user.username}' con {context['domain_proxy_count']} dominios.")
+#     return render(request, 'dominios_proxy.html', context)
 
 
 
