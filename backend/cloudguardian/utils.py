@@ -178,27 +178,27 @@ def construir_configuracion_global(*, iniciado_por: str | None = None) -> Tuple[
                             f":{settings.CADDY_HTTP_PORT}",
                             f":{settings.CADDY_HTTPS_PORT}"
                         ],
-                        "routes": [],  # Inicializa la lista de rutas
+                        "routes": []  # Inicializa la lista de rutas
 
-                        # Configuración de Logs para este servidor Caddy
-                        "logs": {
-                            "default_logger_name": f"access_logs_{settings.SERVIDOR_CADDY}",
-                            "logger_names": {
-                                f"access_logs_{settings.SERVIDOR_CADDY}": {
-                                    "writer": {
-                                        "output": "file",
-                                        "filename": "/var/log/caddy/cloudguardian_access.log",
-                                        "roll_size": "10mb",
-                                        "roll_keep": 5,
-                                        "roll_keep_for": "720h"
-                                    },
-                                    "encoder": {
-                                        "format": "json"
-                                    },
-                                    "level": "INFO"
-                                }
-                            }
-                        }
+                        # # Configuración de Logs para este servidor Caddy
+                        # ,"logs": {
+                        #     "default_logger_name": f"access_logs_{settings.SERVIDOR_CADDY}",
+                        #     "logger_names": {
+                        #         f"access_logs_{settings.SERVIDOR_CADDY}": {
+                        #             "writer": {
+                        #                 "output": "file",
+                        #                 "filename": "/var/log/caddy/cloudguardian_access.log",
+                        #                 "roll_size": "10mb",
+                        #                 "roll_keep": 5,
+                        #                 "roll_keep_for": "720h"
+                        #             },
+                        #             "encoder": {
+                        #                 "format": "json"
+                        #             },
+                        #             "level": "INFO"
+                        #         }
+                        #     }
+                        # }
                     }  
                 }
             }

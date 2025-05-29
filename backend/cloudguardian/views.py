@@ -1014,17 +1014,16 @@ def rutas_protegidas(request):
         "rutas": rutas_actuales_paths_render # Pasamos la lista de strings (paths) a mostrar.
     })
 
-
 @login_required
 def subdominios_view(request):
     """
-    Vista para gestionar subdominios del tipo <subdominio>.cloud-firewall.eu y redirigirlos mediante proxy.
+    Vista para gestionar subdominios del tipo <subdominio>.cloud-firewall.eu y redirigirlos mediante proxy,
+    aplicando automáticamente las IPs bloqueadas del usuario.
     """
     logger.debug(f"Usuario '{request.user.username}' accediendo a la vista de subdominios proxy.")
 
     try:
         user_cfg_obj, _ = UserJSON.objects.get_or_create(user=request.user)
-
         user_routes = user_cfg_obj.json_data \
             .setdefault("apps", {}) \
             .setdefault("http", {}) \
@@ -1037,35 +1036,19 @@ def subdominios_view(request):
         logger.exception(f"Error al inicializar UserJSON para '{request.user.username}' en subdominios_view.")
         return redirect("home")
 
-    # Mostrar subdominios existentes
     subdominios_para_template = []
     for route in user_routes:
-        hosts = []
-        destinos = []
-        es_proxy = False
+        hosts, destinos = [], []
+        if any(h.get("handler") == "reverse_proxy" for h in route.get('handle', [])):
+            hosts = [h for m in route.get('match', []) if 'host' in m for h in m['host'] if h.endswith(".cloud-firewall.eu")]
+            destinos = [up["dial"] for h in route.get('handle', []) for up in h.get("upstreams", []) if "dial" in up]
+            if hosts and destinos:
+                subdominios_para_template.append({
+                    "subdominio": hosts[0].split(".cloud-firewall.eu")[0],
+                    "dominio_completo": hosts[0],
+                    "destino": destinos[0]
+                })
 
-        for matcher in route.get('match', []):
-            if 'host' in matcher:
-                hosts.extend(matcher['host'])
-
-        for handler in route.get('handle', []):
-            if handler.get("handler") == "reverse_proxy":
-                es_proxy = True
-                for up in handler.get("upstreams", []):
-                    if "dial" in up:
-                        destinos.append(up["dial"])
-                break
-
-        if es_proxy and hosts and destinos:
-            for h in hosts:
-                if h.endswith(".cloud-firewall.eu"):
-                    subdominios_para_template.append({
-                        "subdominio": h.split(".cloud-firewall.eu")[0],
-                        "dominio_completo": h,
-                        "destino": destinos[0]  # Solo mostramos el primero
-                    })
-
-    # Procesar peticiones POST (añadir/eliminar)
     if request.method == "POST":
         action = request.POST.get("action")
         subdomain = request.POST.get("subdomain", "").strip().lower()
@@ -1078,31 +1061,58 @@ def subdominios_view(request):
         full_domain = f"{subdomain}.cloud-firewall.eu"
 
         if action == "add":
-            if not target_url:
-                messages.warning(request, "Debes introducir la IP o URL de destino.")
-                return redirect("subdominios_view")
-
             if any(s["dominio_completo"] == full_domain for s in subdominios_para_template):
                 messages.info(request, f"El subdominio '{full_domain}' ya existe.")
                 return redirect("subdominios_view")
 
+            if not target_url:
+                messages.warning(request, "Debes introducir la IP o URL de destino.")
+                return redirect("subdominios_view")
+
             try:
                 parsed = urlparse(target_url)
+                if not parsed.hostname:
+                    messages.error(request, "La URL de destino no es válida.")
+                    return redirect("subdominios_view")
+
                 port = parsed.port or (443 if parsed.scheme == "https" else 80)
                 dial = f"{parsed.hostname}:{port}"
 
-                new_route = {
+                # Obtener IPs bloqueadas del usuario
+                bloqueadas = []
+                for r in user_routes:
+                    for m in r.get("match", []):
+                        if "remote_ip" in m and any(path.startswith(f"/{request.user.username}/") for path in m.get("path", [])):
+                            bloqueadas = m["remote_ip"].get("ranges", [])
+                            break
+
+                # Genera ruta de bloqueo (si hay IPs bloqueadas)
+                if bloqueadas:
+                    ruta_bloqueo = {
+                        "match": [{
+                            "host": [full_domain],
+                            "remote_ip": {"ranges": bloqueadas}
+                        }],
+                        "handle": [{
+                            "handler": "static_response",
+                            "status_code": 403,
+                            "body": "IP bloqueada por Cloud Guardian"
+                        }]
+                    }
+                    user_routes.insert(0, ruta_bloqueo)
+
+                # Ruta normal reverse_proxy sin restricción adicional
+                ruta_proxy = {
                     "match": [{"host": [full_domain]}],
                     "handle": [{
                         "handler": "reverse_proxy",
                         "upstreams": [{"dial": dial}],
-                        **({"transport": {"protocol": "http", "tls": {}}} if parsed.scheme == "https" else {})
+                        **({"transport": {"protocol": "http", "tls": {}}} if port == 443 else {})
                     }]
                 }
+                user_routes.insert(1 if bloqueadas else 0, ruta_proxy)
 
-                user_routes.insert(0, new_route)
                 user_cfg_obj.save()
-
                 ok, msg = construir_configuracion_global(iniciado_por=f"Add subdomain by {request.user.username}")
                 if ok:
                     messages.success(request, f"Subdominio '{full_domain}' creado correctamente. {msg}")
@@ -1116,8 +1126,7 @@ def subdominios_view(request):
         elif action == "delete":
             original_count = len(user_routes)
             user_routes[:] = [
-                r for r in user_routes
-                if not any(full_domain in m.get("host", []) for m in r.get("match", []))
+                r for r in user_routes if not any(full_domain in m.get("host", []) for m in r.get("match", []))
             ]
 
             if len(user_routes) < original_count:
@@ -1140,6 +1149,7 @@ def subdominios_view(request):
         "subdominios": subdominios_para_template,
         "server_ip": settings.SERVER_PUBLIC_IP,
     })
+
 
 
 """ DOMINIOS PROXI """
