@@ -94,8 +94,6 @@
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
                 Administra reglas de acceso y seguridad (ej. autenticación, IP whitelists) para rutas específicas de tu web.
             </p>
-            {# Si tienes el conteo, añádelo aquí #}
-            {# <p class="mt-auto text-4xl font-extrabold text-orange-600 dark:text-orange-400 z-10">{{ ruta_protegida_count }} <span class="text-2xl font-semibold">reglas</span></p> #}
             <div class="mt-auto text-blue-600 dark:text-blue-400 font-semibold flex items-center">
                 Gestionar <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
             </div>
@@ -165,23 +163,7 @@
     </div> 
 </div> 
 
-{# Modal de bienvenida/tour al primer inicio de sesión  #}
-{% if show_welcome_modal %}
-<div id="welcome-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 animate-fade-in">
-    <div class="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-2xl max-w-lg w-full text-center relative animate-zoom-in">
-        <button onclick="document.getElementById('welcome-modal').remove()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl">
-            <i class="fa-solid fa-xmark"></i>
-        </button>
-        <h2 class="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-4">¡Bienvenido a CloudGuardian!</h2>
-        <p class="text-gray-700 dark:text-gray-300 mb-6">
-            Nos alegra tenerte a bordo. Aquí puedes gestionar la seguridad y el tráfico de tu servidor de forma sencilla e intuitiva.
-            Explora las diferentes secciones y toma el control.
-        </p>
-        <button onclick="document.getElementById('welcome-modal').remove()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all">
-            Empezar
-        </button>
-    </div>
-</div>
+
 
 {% endif %}
 
