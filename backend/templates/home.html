@@ -101,24 +101,7 @@
             </div>
         </a>
 
-        {# Tarjeta: Destinos Externos  #}
-        <a href="{% url 'destinos_externos' %}"
-            class="block rounded-xl p-8 transform hover:scale-105 hover:shadow-2xl transition-all duration-300 
-                bg-white dark:bg-gray-800 
-                text-gray-900 dark:text-white 
-                border border-gray-200 dark:border-gray-700 
-                flex flex-col justify-between group relative overflow-hidden">
-            <i class="fa-solid fa-server absolute top-4 right-4 text-5xl text-gray-200 dark:text-gray-700 opacity-70 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-2xl font-bold mb-4 flex items-center z-10">
-                <i class="fa-solid fa-arrow-right-from-bracket mr-3 text-3xl text-teal-600 dark:text-teal-400"></i> Destinos Externos
-            </h2>
-            <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 z-10">
-                Configura proxies inversos a hosts y servicios externos o internos de tu infraestructura.
-            </p>
-            <p class="mt-auto text-4xl font-extrabold text-teal-600 dark:text-teal-400 z-10">
-                {{ external_destination_count }} <span class="text-2xl font-semibold">destinos</span>
-            </p>
-        </a>
+        
 
         {# Tarjeta: Dominios Proxy  #}
         <a href="{% url 'dominios_proxy_view' %}" 
