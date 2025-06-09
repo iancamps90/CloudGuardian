@@ -16,6 +16,7 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+SERVER_PUBLIC_IP = "167.235.155.72"
 
 
 #  log directory exists
@@ -23,6 +24,7 @@ LOG_DIR = BASE_DIR / 'logs'
 os.makedirs(LOG_DIR, exist_ok=True) 
 
 
+#  DIRECTORIOS BASE A CADDY 
 # Identificador del servidor Caddy que usas en tu configuración JSON
 SERVIDOR_CADDY = "Cloud_Guardian"
 
@@ -30,10 +32,6 @@ SERVIDOR_CADDY = "Cloud_Guardian"
 # Por defecto, son los puertos estándar 80 y 443.
 CADDY_HTTP_PORT = 80
 CADDY_HTTPS_PORT = 443
-
-
-SERVER_PUBLIC_IP = "167.235.155.72"
-
 
 # URL de la API de administración de Caddy.
 # ¡CRÍTICO para producción!

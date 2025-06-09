@@ -28,4 +28,6 @@ services:
       - django
     volumes:
       - ./backend/deploy/caddy.json:/etc/caddy/caddy.json:rw  #  Se lo pasamos a Caddy también
-      - ./deploy/www:/srv  # opcional si tienes frontend
+      - ./deploy/www:/srv  # COMPILA frontend
+      
+#  INDICAMOS DIRECTORIOS PARA GENERAR LOS CONTENDORES docker TANTO DEL BACK COMO EL DEPLOY QUE COMPILA EL FRONT.
